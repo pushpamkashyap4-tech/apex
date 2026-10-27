@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="APEX">
+<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101820"/><stop offset="1" stop-color="#243548"/></linearGradient><linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7f3ff"/><stop offset=".38" stop-color="#42adfa"/><stop offset="1" stop-color="#07539f"/></linearGradient></defs>
+<rect width="64" height="64" rx="18" fill="url(#b)"/><path d="m12 47 13-31q2-4 5-4t5 4l5 11-7 5-3-7-9 21 8-3 4 7-14 5q-8 2-7-8Z" fill="url(#m)"/><path d="m32 36 18-19-1 8 10-15 1 19-6-6-16 17z" fill="url(#m)" stroke="#8ed6ff" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>
