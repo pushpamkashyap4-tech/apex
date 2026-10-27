@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">APEX Study Tracker</title><desc id="desc">Metallic blue A with an upward wing arrow, above the words APEX Study Tracker.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#111820"/><stop offset="1" stop-color="#202b38"/></linearGradient>
+ <linearGradient id="metal" x1=".12" y1=".08" x2=".84" y2=".95"><stop stop-color="#d5f0ff"/><stop offset=".22" stop-color="#58baff"/><stop offset=".57" stop-color="#1682db"/><stop offset=".82" stop-color="#0c4d9c"/><stop offset="1" stop-color="#8ed6ff"/></linearGradient>
+ <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#75cfff"/><stop offset="1" stop-color="#164c8e"/></linearGradient>
+ <filter id="shadow" x="-.3" y="-.3" width="1.6" height="1.7"><feGaussianBlur in="SourceAlpha" stdDeviation="8"/><feOffset dy="7"/><feComponentTransfer><feFuncA type="linear" slope=".42"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect width="512" height="512" rx="76" fill="url(#bg)"/>
+<path d="M114 303 206 91q8-18 25-18h10q16 0 24 17l38 83-42 26-31-69-67 151 46-18 20 39-91 35q-19 7-29-7t5-37Z" fill="url(#metal)" stroke="url(#edge)" stroke-width="3" filter="url(#shadow)"/>
+<path d="m228 260 37-19 33 57-39 18z" fill="#102942" opacity=".9"/>
+<path d="m277 252 117-117-4 50 58-91 8 110-34-36-112 114z" fill="url(#metal)" stroke="#8ad8ff" stroke-width="4" stroke-linejoin="round" filter="url(#shadow)"/>
+<path d="m295 236 99-78m-74 101 93-73" fill="none" stroke="#c6efff" stroke-opacity=".58" stroke-width="4" stroke-linecap="round"/>
+<text x="256" y="391" text-anchor="middle" fill="#f8fbff" font-family="Arial,Helvetica,sans-serif" font-size="61" font-weight="800" letter-spacing="10">APEX</text>
+<path d="M148 415h216" stroke="#5daeea" stroke-opacity=".65"/>
+<text x="256" y="448" text-anchor="middle" fill="#9eafc2" font-family="Arial,Helvetica,sans-serif" font-size="19" font-weight="700" letter-spacing="5">STUDY TRACKER</text>
+</svg>
