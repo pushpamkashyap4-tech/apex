@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" fill="none">
+  <defs>
+    <radialGradient id="nebula" cx="0" cy="0" r="1" gradientTransform="matrix(455 405 -260 292 980 125)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7775D8" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#7775D8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path fill="url(#nebula)" d="M0 0h1200v900H0z"/>
+  <g fill="#E8EAFF">
+    <circle cx="92" cy="115" r="1.1" opacity=".52"/><circle cx="213" cy="64" r=".8" opacity=".45"/>
+    <circle cx="348" cy="191" r="1.2" opacity=".58"/><circle cx="465" cy="83" r=".7" opacity=".5"/>
+    <circle cx="590" cy="148" r=".9" opacity=".48"/><circle cx="718" cy="71" r="1.2" opacity=".62"/>
+    <circle cx="865" cy="204" r=".8" opacity=".5"/><circle cx="1034" cy="112" r="1.2" opacity=".58"/>
+    <circle cx="1134" cy="260" r=".7" opacity=".42"/><circle cx="147" cy="345" r=".8" opacity=".42"/>
+    <circle cx="287" cy="425" r="1.1" opacity=".58"/><circle cx="421" cy="330" r=".7" opacity=".46"/>
+    <circle cx="555" cy="468" r="1.2" opacity=".56"/><circle cx="684" cy="374" r=".8" opacity=".44"/>
+    <circle cx="812" cy="509" r=".9" opacity=".5"/><circle cx="956" cy="407" r="1.2" opacity=".6"/>
+    <circle cx="1092" cy="548" r=".8" opacity=".44"/><circle cx="75" cy="612" r="1.2" opacity=".5"/>
+    <circle cx="225" cy="740" r=".7" opacity=".46"/><circle cx="365" cy="628" r="1.1" opacity=".55"/>
+    <circle cx="510" cy="812" r=".8" opacity=".48"/><circle cx="648" cy="690" r="1.2" opacity=".6"/>
+    <circle cx="778" cy="829" r=".7" opacity=".42"/><circle cx="926" cy="706" r="1.1" opacity=".52"/>
+    <circle cx="1071" cy="826" r=".8" opacity=".46"/><circle cx="1166" cy="672" r="1.2" opacity=".56"/>
+  </g>
+  <g stroke="#DCE2FF" stroke-linecap="round" opacity=".38">
+    <path d="M721 63v16M713 71h16"/><path d="M958 398v17M949.5 406.5h17"/>
+    <path d="M646 683v14M639 690h14"/>
+  </g>
+</svg>
