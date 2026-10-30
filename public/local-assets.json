@@ -1,0 +1,422 @@
+[
+  {
+    "id": "figures/chemistry-1.webp",
+    "title": "Chemistry 1",
+    "src": "/assets/figures/chemistry-1.webp"
+  },
+  {
+    "id": "figures/chemistry-2.webp",
+    "title": "Chemistry 2",
+    "src": "/assets/figures/chemistry-2.webp"
+  },
+  {
+    "id": "figures/chemistry-3.webp",
+    "title": "Chemistry 3",
+    "src": "/assets/figures/chemistry-3.webp"
+  },
+  {
+    "id": "figures/maths-1.webp",
+    "title": "Maths 1",
+    "src": "/assets/figures/maths-1.webp"
+  },
+  {
+    "id": "figures/maths-2.webp",
+    "title": "Maths 2",
+    "src": "/assets/figures/maths-2.webp"
+  },
+  {
+    "id": "figures/maths-3.webp",
+    "title": "Maths 3",
+    "src": "/assets/figures/maths-3.webp"
+  },
+  {
+    "id": "figures/maths-4.webp",
+    "title": "Maths 4",
+    "src": "/assets/figures/maths-4.webp"
+  },
+  {
+    "id": "figures/maths-5.webp",
+    "title": "Maths 5",
+    "src": "/assets/figures/maths-5.webp"
+  },
+  {
+    "id": "figures/physics-1.webp",
+    "title": "Physics 1",
+    "src": "/assets/figures/physics-1.webp"
+  },
+  {
+    "id": "figures/physics-2.webp",
+    "title": "Physics 2",
+    "src": "/assets/figures/physics-2.webp"
+  },
+  {
+    "id": "figures/physics-3.webp",
+    "title": "Physics 3",
+    "src": "/assets/figures/physics-3.webp"
+  },
+  {
+    "id": "figures/physics-4.webp",
+    "title": "Physics 4",
+    "src": "/assets/figures/physics-4.webp"
+  },
+  {
+    "id": "images/area_under_curve.png.jpg",
+    "title": "Area Under Curve",
+    "src": "/assets/images/area_under_curve.png.jpg"
+  },
+  {
+    "id": "images/chem_aromatic_substitution.png.jpg",
+    "title": "Chem Aromatic Substitution",
+    "src": "/assets/images/chem_aromatic_substitution.png.jpg"
+  },
+  {
+    "id": "images/chem_benzene.png.jpg",
+    "title": "Chem Benzene",
+    "src": "/assets/images/chem_benzene.png.jpg"
+  },
+  {
+    "id": "images/chem_electrolytic_cell.png.jpg",
+    "title": "Chem Electrolytic Cell",
+    "src": "/assets/images/chem_electrolytic_cell.png.jpg"
+  },
+  {
+    "id": "images/chem_galvanic_cell.png.jpg",
+    "title": "Chem Galvanic Cell",
+    "src": "/assets/images/chem_galvanic_cell.png.jpg"
+  },
+  {
+    "id": "images/chem_hydrogen_bonding.png.jpg",
+    "title": "Chem Hydrogen Bonding",
+    "src": "/assets/images/chem_hydrogen_bonding.png.jpg"
+  },
+  {
+    "id": "images/chem_naphthalene.png.jpg",
+    "title": "Chem Naphthalene",
+    "src": "/assets/images/chem_naphthalene.png.jpg"
+  },
+  {
+    "id": "images/chem_phenol.png.jpg",
+    "title": "Chem Phenol",
+    "src": "/assets/images/chem_phenol.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_bcc_examples.png.jpg",
+    "title": "Chem Solid State Bcc Examples",
+    "src": "/assets/images/chem_solid_state_bcc_examples.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_bcc.png.jpg",
+    "title": "Chem Solid State Bcc",
+    "src": "/assets/images/chem_solid_state_bcc.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_diamond.png.jpg",
+    "title": "Chem Solid State Diamond",
+    "src": "/assets/images/chem_solid_state_diamond.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_fcc_examples.png.jpg",
+    "title": "Chem Solid State Fcc Examples",
+    "src": "/assets/images/chem_solid_state_fcc_examples.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_fcc.png.jpg",
+    "title": "Chem Solid State Fcc",
+    "src": "/assets/images/chem_solid_state_fcc.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_hcp_examples.png.jpg",
+    "title": "Chem Solid State Hcp Examples",
+    "src": "/assets/images/chem_solid_state_hcp_examples.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_metallic.png.jpg",
+    "title": "Chem Solid State Metallic",
+    "src": "/assets/images/chem_solid_state_metallic.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_molecular.png.jpg",
+    "title": "Chem Solid State Molecular",
+    "src": "/assets/images/chem_solid_state_molecular.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_nacl.png.jpg",
+    "title": "Chem Solid State Nacl",
+    "src": "/assets/images/chem_solid_state_nacl.png.jpg"
+  },
+  {
+    "id": "images/chem_solid_state_types.png.jpg",
+    "title": "Chem Solid State Types",
+    "src": "/assets/images/chem_solid_state_types.png.jpg"
+  },
+  {
+    "id": "images/chem_toluene.png.jpg",
+    "title": "Chem Toluene",
+    "src": "/assets/images/chem_toluene.png.jpg"
+  },
+  {
+    "id": "images/chem_vsepr_all.png.jpg",
+    "title": "Chem Vsepr All",
+    "src": "/assets/images/chem_vsepr_all.png.jpg"
+  },
+  {
+    "id": "images/chem_vsepr_linear.png.jpg",
+    "title": "Chem Vsepr Linear",
+    "src": "/assets/images/chem_vsepr_linear.png.jpg"
+  },
+  {
+    "id": "images/chem_vsepr_octahedral.png.jpg",
+    "title": "Chem Vsepr Octahedral",
+    "src": "/assets/images/chem_vsepr_octahedral.png.jpg"
+  },
+  {
+    "id": "images/chem_vsepr_tetrahedral.png.jpg",
+    "title": "Chem Vsepr Tetrahedral",
+    "src": "/assets/images/chem_vsepr_tetrahedral.png.jpg"
+  },
+  {
+    "id": "images/chem_vsepr_trigonal_bipyramidal.png.jpg",
+    "title": "Chem Vsepr Trigonal Bipyramidal",
+    "src": "/assets/images/chem_vsepr_trigonal_bipyramidal.png.jpg"
+  },
+  {
+    "id": "images/chem_vsepr_trigonal_planar.png.jpg",
+    "title": "Chem Vsepr Trigonal Planar",
+    "src": "/assets/images/chem_vsepr_trigonal_planar.png.jpg"
+  },
+  {
+    "id": "images/conic_sections.png.jpg",
+    "title": "Conic Sections",
+    "src": "/assets/images/conic_sections.png.jpg"
+  },
+  {
+    "id": "images/continuity_types.png.jpg",
+    "title": "Continuity Types",
+    "src": "/assets/images/continuity_types.png.jpg"
+  },
+  {
+    "id": "images/function_transformations.png.jpg",
+    "title": "Function Transformations",
+    "src": "/assets/images/function_transformations.png.jpg"
+  },
+  {
+    "id": "images/graph_arccos_x.png.jpg",
+    "title": "Graph Arccos X",
+    "src": "/assets/images/graph_arccos_x.png.jpg"
+  },
+  {
+    "id": "images/graph_arccot_x.png.jpg",
+    "title": "Graph Arccot X",
+    "src": "/assets/images/graph_arccot_x.png.jpg"
+  },
+  {
+    "id": "images/graph_arccsc_x.png.jpg",
+    "title": "Graph Arccsc X",
+    "src": "/assets/images/graph_arccsc_x.png.jpg"
+  },
+  {
+    "id": "images/graph_arcsec_x.png.jpg",
+    "title": "Graph Arcsec X",
+    "src": "/assets/images/graph_arcsec_x.png.jpg"
+  },
+  {
+    "id": "images/graph_arcsin_x.png.jpg",
+    "title": "Graph Arcsin X",
+    "src": "/assets/images/graph_arcsin_x.png.jpg"
+  },
+  {
+    "id": "images/graph_arctan_x.png.jpg",
+    "title": "Graph Arctan X",
+    "src": "/assets/images/graph_arctan_x.png.jpg"
+  },
+  {
+    "id": "images/graph_cos_x.png.jpg",
+    "title": "Graph Cos X",
+    "src": "/assets/images/graph_cos_x.png.jpg"
+  },
+  {
+    "id": "images/graph_cot_x.png.jpg",
+    "title": "Graph Cot X",
+    "src": "/assets/images/graph_cot_x.png.jpg"
+  },
+  {
+    "id": "images/graph_csc_x.png.jpg",
+    "title": "Graph Csc X",
+    "src": "/assets/images/graph_csc_x.png.jpg"
+  },
+  {
+    "id": "images/graph_sec_x.png.jpg",
+    "title": "Graph Sec X",
+    "src": "/assets/images/graph_sec_x.png.jpg"
+  },
+  {
+    "id": "images/graph_sin_x.png.jpg",
+    "title": "Graph Sin X",
+    "src": "/assets/images/graph_sin_x.png.jpg"
+  },
+  {
+    "id": "images/graph_tan_x.png.jpg",
+    "title": "Graph Tan X",
+    "src": "/assets/images/graph_tan_x.png.jpg"
+  },
+  {
+    "id": "images/line_plane_intersection.png.jpg",
+    "title": "Line Plane Intersection",
+    "src": "/assets/images/line_plane_intersection.png.jpg"
+  },
+  {
+    "id": "images/lmvt_rolle.png.jpg",
+    "title": "Lmvt Rolle",
+    "src": "/assets/images/lmvt_rolle.png.jpg"
+  },
+  {
+    "id": "images/math_circle.png.jpg",
+    "title": "Math Circle",
+    "src": "/assets/images/math_circle.png.jpg"
+  },
+  {
+    "id": "images/math_domain_codomain_range.png.jpg",
+    "title": "Math Domain Codomain Range",
+    "src": "/assets/images/math_domain_codomain_range.png.jpg"
+  },
+  {
+    "id": "images/math_ellipse.png.jpg",
+    "title": "Math Ellipse",
+    "src": "/assets/images/math_ellipse.png.jpg"
+  },
+  {
+    "id": "images/math_function_bijective.png.jpg",
+    "title": "Math Function Bijective",
+    "src": "/assets/images/math_function_bijective.png.jpg"
+  },
+  {
+    "id": "images/math_function_injective.png.jpg",
+    "title": "Math Function Injective",
+    "src": "/assets/images/math_function_injective.png.jpg"
+  },
+  {
+    "id": "images/math_function_many_to_one.png.jpg",
+    "title": "Math Function Many To One",
+    "src": "/assets/images/math_function_many_to_one.png.jpg"
+  },
+  {
+    "id": "images/math_function_surjective.png.jpg",
+    "title": "Math Function Surjective",
+    "src": "/assets/images/math_function_surjective.png.jpg"
+  },
+  {
+    "id": "images/math_functions_representation.png.jpg",
+    "title": "Math Functions Representation",
+    "src": "/assets/images/math_functions_representation.png.jpg"
+  },
+  {
+    "id": "images/math_hyperbola.png.jpg",
+    "title": "Math Hyperbola",
+    "src": "/assets/images/math_hyperbola.png.jpg"
+  },
+  {
+    "id": "images/math_parabola.png.jpg",
+    "title": "Math Parabola",
+    "src": "/assets/images/math_parabola.png.jpg"
+  },
+  {
+    "id": "images/phys_banking_roads.png.jpg",
+    "title": "Phys Banking Roads",
+    "src": "/assets/images/phys_banking_roads.png.jpg"
+  },
+  {
+    "id": "images/phys_binding_energy.png.jpg",
+    "title": "Phys Binding Energy",
+    "src": "/assets/images/phys_binding_energy.png.jpg"
+  },
+  {
+    "id": "images/phys_capacitor_dielectric.png.jpg",
+    "title": "Phys Capacitor Dielectric",
+    "src": "/assets/images/phys_capacitor_dielectric.png.jpg"
+  },
+  {
+    "id": "images/phys_electric_field_like_charges.png.jpg",
+    "title": "Phys Electric Field Like Charges",
+    "src": "/assets/images/phys_electric_field_like_charges.png.jpg"
+  },
+  {
+    "id": "images/phys_electric_field_point_charges.png.jpg",
+    "title": "Phys Electric Field Point Charges",
+    "src": "/assets/images/phys_electric_field_point_charges.png.jpg"
+  },
+  {
+    "id": "images/phys_electric_flux.svg",
+    "title": "Phys Electric Flux",
+    "src": "/assets/images/phys_electric_flux.svg"
+  },
+  {
+    "id": "images/phys_electric_potential_field_nonconducting.png.jpg",
+    "title": "Phys Electric Potential Field Nonconducting",
+    "src": "/assets/images/phys_electric_potential_field_nonconducting.png.jpg"
+  },
+  {
+    "id": "images/phys_electric_potential_field_uniform.png.jpg",
+    "title": "Phys Electric Potential Field Uniform",
+    "src": "/assets/images/phys_electric_potential_field_uniform.png.jpg"
+  },
+  {
+    "id": "images/phys_fbd.png.jpg",
+    "title": "Phys Fbd",
+    "src": "/assets/images/phys_fbd.png.jpg"
+  },
+  {
+    "id": "images/phys_magnetic_field_wire.svg",
+    "title": "Phys Magnetic Field Wire",
+    "src": "/assets/images/phys_magnetic_field_wire.svg"
+  },
+  {
+    "id": "images/phys_magnetic_hysteresis.png.jpg",
+    "title": "Phys Magnetic Hysteresis",
+    "src": "/assets/images/phys_magnetic_hysteresis.png.jpg"
+  },
+  {
+    "id": "images/phys_motion_graphs.png.jpg",
+    "title": "Phys Motion Graphs",
+    "src": "/assets/images/phys_motion_graphs.png.jpg"
+  },
+  {
+    "id": "images/phys_optics_ray_diagrams.png.jpg",
+    "title": "Phys Optics Ray Diagrams",
+    "src": "/assets/images/phys_optics_ray_diagrams.png.jpg"
+  },
+  {
+    "id": "images/phys_photoelectric_frequency.png.jpg",
+    "title": "Phys Photoelectric Frequency",
+    "src": "/assets/images/phys_photoelectric_frequency.png.jpg"
+  },
+  {
+    "id": "images/phys_potential_energy_curves.png.jpg",
+    "title": "Phys Potential Energy Curves",
+    "src": "/assets/images/phys_potential_energy_curves.png.jpg"
+  },
+  {
+    "id": "images/phys_prism_deviation.png.jpg",
+    "title": "Phys Prism Deviation",
+    "src": "/assets/images/phys_prism_deviation.png.jpg"
+  },
+  {
+    "id": "images/phys_projectile_motion.png.jpg",
+    "title": "Phys Projectile Motion",
+    "src": "/assets/images/phys_projectile_motion.png.jpg"
+  },
+  {
+    "id": "images/phys_rocket_propulsion.png.jpg",
+    "title": "Phys Rocket Propulsion",
+    "src": "/assets/images/phys_rocket_propulsion.png.jpg"
+  },
+  {
+    "id": "images/phys_ydse.png.jpg",
+    "title": "Phys Ydse",
+    "src": "/assets/images/phys_ydse.png.jpg"
+  },
+  {
+    "id": "images/vector_geometry.png.jpg",
+    "title": "Vector Geometry",
+    "src": "/assets/images/vector_geometry.png.jpg"
+  }
+]
