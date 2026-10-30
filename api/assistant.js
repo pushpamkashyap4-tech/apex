@@ -16,7 +16,12 @@ const GEMINI_MODELS = {
   "assistant-default": ["gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
   planner: ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"], recall: ["gemini-3.5-flash-lite"], visual: ["gemini-3.5-flash"]
 };
-const GEMINI_IMAGE_MODELS = new Set(["nano-banana-2-lite"]);
+const GEMINI_IMAGE_MODELS = new Map([
+  ["gemini-nano-banana-2.1", "gemini-nano-banana-2.1"],
+  ["gemini-3.1-flash-image", "gemini-3.1-flash-image"],
+  ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-lite-image"],
+  ["nano-banana-2-lite", "gemini-3.1-flash-lite-image"]
+]);
 const GEMINI_CHAT_MODELS = new Set(["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-pro-latest", "gemini-flash-latest", "gemini-flash-lite-latest"]);
 
 function autoRoute(messages, hasImages = false) {
@@ -210,22 +215,34 @@ async function askGroqWithFallback(keys, messages, options = {}) {
 }
 
 async function askGeminiImage(keys, messages, model, rotationStart = 0) {
-  const text = messages.filter((message) => message.role !== "system").map((message) => contentText(message.content)).join("\n\n").slice(-10000);
-  const { response, error } = await fetchRotating(keys, (key) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }], generationConfig: { responseModalities: ["IMAGE", "TEXT"] } })
-  }), rotationStart);
-  if (!response) return { error: providerError({}, 0, "Gemini image generation", error) };
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) return { error: providerError(payload, response.status, "Gemini image generation") };
-  const parts = payload.candidates?.[0]?.content?.parts || [];
-  const image = parts.find((part) => part.inlineData?.data || part.inline_data?.data);
-  const textAnswer = parts.map((part) => part.text || "").filter(Boolean).join("\n").trim();
-  const data = image?.inlineData?.data || image?.inline_data?.data;
-  const mime = image?.inlineData?.mimeType || image?.inline_data?.mime_type || "image/png";
-  if (!data) return { error: textAnswer || "Gemini did not return an image." };
-  return { answer: `${textAnswer ? `${textAnswer}\n\n` : ""}![Generated image](data:${mime};base64,${data})` };
+  const request = messages.filter((message) => message.role !== "system").map((message) => contentText(message.content)).join("\n\n").slice(-10000);
+  const text = `Create only the requested visual. Do not put a description, explanation, title, caption, domain/range note, or paragraph inside the image. Keep only essential visual labels and symbols. Return a brief plain-language description separately as text, after the image.\n\nUser request: ${request}`;
+  const models = [model, ...GEMINI_IMAGE_MODELS.values()].filter((candidate, index, list) => list.indexOf(candidate) === index);
+  let lastError = "Gemini did not return an image.";
+  for (const candidate of models) {
+    const { response, error } = await fetchRotating(keys, (key) => fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ model: candidate, input: text, response_format: [{ type: "text" }, { type: "image" }] })
+    }), rotationStart);
+    if (!response) { lastError = providerError({}, 0, "Gemini image generation", error); continue; }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      lastError = providerError(payload, response.status, "Gemini image generation");
+      const detail = String(payload?.error?.message || "").toLowerCase();
+      const canTryNextImageModel = response.status === 429 || response.status === 404 || /quota|rate.?limit|not found|unsupported model|model .*not available/i.test(detail);
+      if (canTryNextImageModel) continue;
+      return { error: lastError };
+    }
+    const outputs = [payload.output_image, ...(payload.steps || []).flatMap((step) => step.content || [])].filter(Boolean);
+    const image = outputs.find((part) => part.type === "image" || part.data && (part.mime_type || part.mimeType || "").startsWith("image/"));
+    const textAnswer = [payload.output_text, ...(payload.steps || []).flatMap((step) => (step.content || []).filter((part) => part.type === "text").map((part) => part.text))].filter(Boolean).join("\n").trim();
+    const data = image?.data || image?.inlineData?.data || image?.inline_data?.data;
+    const mime = image?.mime_type || image?.mimeType || image?.inlineData?.mimeType || image?.inline_data?.mime_type || "image/png";
+    if (data) return { answer: `![Generated image](data:${mime};base64,${data})\n\n${textAnswer || "Generated image."}`, model: candidate };
+    lastError = textAnswer || `Gemini image model ${candidate} returned no generated image.`;
+  }
+  return { error: `All configured Gemini image models were tried. ${lastError}` };
 }
 
 async function askGemini(keys, messages, useSearch, preferredModel, options = {}) {
@@ -281,7 +298,11 @@ export default async function assistant(req, res) {
     const task = ["assistant", "planner", "recall", "visual"].includes(body.task) ? body.task : "assistant";
     const requestedModel = String(body.modelOverride || "auto");
     const exactGroqModel = GROQ_MODELS.includes(requestedModel) ? requestedModel : "";
-    const exactGeminiImageModel = GEMINI_IMAGE_MODELS.has(requestedModel) ? requestedModel : "";
+    const lastUserPrompt = contentText([...messages].reverse().find((message) => message.role === "user")?.content || "");
+    const normalizedPrompt = lastUserPrompt.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const imageGenerationIntent = /\b(?:generate|create|make|draw|produce|design)\b.{0,80}\b(?:image|picture|illustration|artwork|photo)\b/.test(normalizedPrompt)
+      || /\b(?:image|picture|illustration|artwork|photo)\s+generation\b/.test(normalizedPrompt);
+    const exactGeminiImageModel = GEMINI_IMAGE_MODELS.get(requestedModel) || (imageGenerationIntent ? "gemini-nano-banana-2.1" : "");
     const exactGeminiChatModel = GEMINI_CHAT_MODELS.has(requestedModel) ? requestedModel : "";
     const hasImages = messages.some((message) => (Array.isArray(message.content) ? message.content : [message.content]).some((part) => part?.type === "image_url"));
     const selectedModel = exactGroqModel || exactGeminiChatModel || autoRoute(messages, hasImages);
@@ -289,7 +310,7 @@ export default async function assistant(req, res) {
     if (exactGeminiImageModel) {
       if (!geminiKeys.length) return respond(res, 503, { error: "Add a Gemini API key in Settings to generate images." });
       const result = await askGeminiImage(geminiKeys, messages, exactGeminiImageModel, body.keyRotationStart);
-      return result.answer ? respond(res, 200, { answer: result.answer, provider: `Gemini · ${exactGeminiImageModel}` }) : respond(res, 502, { error: result.error || "Gemini image generation failed." });
+      return result.answer ? respond(res, 200, { answer: result.answer, provider: `Gemini · ${result.model || exactGeminiImageModel}`, model: result.model || exactGeminiImageModel }) : respond(res, 502, { error: result.error || "Gemini image generation failed." });
     }
     const preference = hasImages ? ["gemini", "groq"] : [override, override === "gemini" ? "groq" : "gemini"];
     const order = preference;
@@ -332,3 +353,5 @@ export default async function assistant(req, res) {
     return respond(res, 500, { error: "The assistant request failed. Please try again." });
   }
 }
+
+export const config = { api: { bodyParser: { sizeLimit: "24mb" } } };
