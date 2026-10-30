@@ -18,6 +18,8 @@ export const STUDY_FIGURES = [
   { id: "maths-circle", subject: "Mathematics", title: "Circle diagram", src: "/assets/images/math_circle.png.jpg", keywords: ["circle", "circle geometry", "circle diagram", "equation of circle"] },
   { id: "maths-functions", subject: "Mathematics", title: "Function representations", src: "/assets/images/math_functions_representation.png.jpg", keywords: ["function mapping", "function representations", "domain codomain range"] },
   { id: "physics-free-body", subject: "Physics", title: "Free body diagram", src: "/assets/images/phys_fbd.png.jpg", keywords: ["free body diagram", "fbd", "force diagram", "forces on a body"] },
+  { id: "physics-electric-flux-svg", subject: "Physics", title: "Electric flux field lines", src: "/assets/images/phys_electric_flux.svg", keywords: ["electric flux", "flux through a surface", "electric flux svg"] },
+  { id: "physics-magnetic-wire-svg", subject: "Physics", title: "Magnetic field around a wire", src: "/assets/images/phys_magnetic_field_wire.svg", keywords: ["magnetic field wire", "field around a current carrying wire", "right hand rule magnetic field", "magnetic field svg"] },
   { id: "physics-ray-diagrams", subject: "Physics", title: "Optics ray diagrams", src: "/assets/images/phys_optics_ray_diagrams.png.jpg", keywords: ["ray diagram", "optics diagram", "lens ray", "mirror ray"] },
   { id: "chemistry-vsepr", subject: "Chemistry", title: "VSEPR shapes", src: "/assets/images/chem_vsepr_all.png.jpg", keywords: ["vsepr", "molecular geometry", "molecular shapes", "molecular structure"] },
   { id: "chemistry-solid-state", subject: "Chemistry", title: "Solid state structures", src: "/assets/images/chem_solid_state_types.png.jpg", keywords: ["solid state structures", "crystal lattice", "unit cell types"] }
@@ -36,4 +38,94 @@ export function findRelevantStudyFigures(query, limit = 2) {
     }, 0)
   })).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score);
   return scored.slice(0, limit).map(({ figure }) => figure.id);
+}
+
+let localAssetCatalogPromise;
+const localAssetStopWords = new Set(["a", "an", "the", "of", "for", "in", "on", "to", "with", "show", "find", "give", "make", "create", "generate", "draw", "please", "image", "picture", "figure", "asset", "svg", "diagram", "illustration", "me", "related"]);
+
+async function loadLocalAssetCatalog() {
+  if (!localAssetCatalogPromise) {
+    localAssetCatalogPromise = (async () => {
+      let lastError;
+      for (const manifestUrl of ["/local-assets.json", "/public/local-assets.json"]) {
+        try {
+          const response = await fetch(manifestUrl, { cache: "no-cache" });
+          if (!response.ok) { lastError = new Error(`Local asset index returned ${response.status}`); continue; }
+          const entries = await response.json();
+          if (!Array.isArray(entries)) { lastError = new Error("Local asset index is invalid."); continue; }
+          const publicPrefix = manifestUrl.startsWith("/public/") ? "/public" : "";
+          return entries.filter((entry) => entry && typeof entry.id === "string" && typeof entry.src === "string"
+            && /^(?:images|figures)\//.test(entry.id) && /^\/assets\/(?:images|figures)\//.test(entry.src))
+            .map((entry) => ({ ...entry, publicPrefix }));
+        } catch (error) { lastError = error; }
+      }
+      throw lastError || new Error("Local asset index could not be loaded.");
+    })().catch((error) => {
+      localAssetCatalogPromise = null;
+      console.warn("Could not load the local study asset index.", error);
+      return [];
+    });
+  }
+  return localAssetCatalogPromise;
+}
+
+function assetSearchTokens(value) {
+  return String(value || "").toLowerCase().replace(/\.(?:png\.)?(?:svg|jpe?g|webp|gif|avif)$/g, "")
+    .replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter((token) => token && !localAssetStopWords.has(token));
+}
+
+async function resolveLocalAssetUrl(asset) {
+  const normalized = asset.src.replace(/^\/public(?=\/)/, "");
+  const candidates = [...new Set([`${asset.publicPrefix || ""}${normalized}`, normalized, `/public${normalized}`])];
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { method: "HEAD", cache: "no-cache" });
+      if (response.ok) return url;
+    } catch {}
+  }
+  return `${asset.publicPrefix || ""}${normalized}`;
+}
+
+export async function findRelevantLocalAsset(query, semanticSearch) {
+  const curatedId = findRelevantStudyFigures(query, 1)[0];
+  if (curatedId) {
+    const figure = STUDY_FIGURES.find((item) => item.id === curatedId);
+    if (figure) {
+      figure.src = await resolveLocalAssetUrl({ src: figure.src });
+      return figure;
+    }
+  }
+
+  const tokens = [...new Set(assetSearchTokens(query))];
+  if (!tokens.length) return null;
+  const catalog = await loadLocalAssetCatalog();
+  if (!catalog.length) return null;
+  if (typeof semanticSearch === "function") {
+    try {
+      const selectedId = await semanticSearch(catalog.map(({ id, title }) => ({ id, title })));
+      const semanticMatch = catalog.find((asset) => asset.id === selectedId);
+      if (semanticMatch) {
+        const figure = { id: `local-${semanticMatch.id.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase()}`, subject: "Local assets", title: semanticMatch.title, src: await resolveLocalAssetUrl(semanticMatch), keywords: tokens };
+        if (!STUDY_FIGURES.some((item) => item.id === figure.id)) STUDY_FIGURES.push(figure);
+        return figure;
+      }
+    } catch (error) { console.warn("AI local asset search was unavailable; using filename search.", error); }
+  }
+  const ranked = catalog.map((asset) => {
+    const haystack = ` ${assetSearchTokens(`${asset.title} ${asset.id}`).join(" ")} `;
+    const aliases = {
+      retentivity: ["hysteresis", "magnetic"], retentive: ["hysteresis", "magnetic"], hysteresis: ["retentivity", "magnetic"],
+      fcc: ["face", "centered", "cubic", "solid", "state"], bcc: ["body", "centered", "cubic", "solid", "state"], hcp: ["hexagonal", "close", "packed", "solid", "state"]
+    };
+    const searchTerms = tokens.flatMap((token) => [token, ...(aliases[token] || [])]);
+    const score = [...new Set(searchTerms)].reduce((total, token) => total + (haystack.includes(` ${token} `) ? (token.length > 3 ? 3 : 1) : 0), 0);
+    return { asset, score };
+  }).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || a.asset.title.localeCompare(b.asset.title));
+  const match = ranked[0]?.asset;
+  if (!match) return null;
+
+  const id = `local-${match.id.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase()}`;
+  const figure = { id, subject: "Local assets", title: match.title, src: await resolveLocalAssetUrl(match), keywords: tokens };
+  if (!STUDY_FIGURES.some((entry) => entry.id === id)) STUDY_FIGURES.push(figure);
+  return figure;
 }

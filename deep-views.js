@@ -1289,7 +1289,7 @@ function ApiKeySettings({ modelPrefs = DEFAULT_MODEL_PREFERENCES, onModelPrefsCh
         modelSelect("planning", "Exam planning", "auto", chatOptions),
         modelSelect("recall", "Flashcards & quizzes", "auto", chatOptions),
         modelSelect("transcription", "Audio transcription", "whisper-large-v3-turbo", AI_MODELS.filter((model) => model.kind === "transcription")),
-        modelSelect("speech", "Read aloud", "canopylabs/orpheus-v1-english", [{ id: "canopylabs/orpheus-v1-english", label: "Groq · Orpheus English" }, { id: "gemini-3.1-flash-tts-preview", label: "Gemini 3.1 Flash TTS" }])
+        modelSelect("speech", "Read aloud", "canopylabs/orpheus-v1-english", [{ id: "canopylabs/orpheus-v1-english", label: "Groq · Orpheus English" }, { id: "gemini-3.8-flash-tts", label: "Gemini Flash TTS" }])
       )
     )
   );

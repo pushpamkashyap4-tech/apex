@@ -7,7 +7,7 @@ import MathMarkdown, { MathGraph, ScientificGraph, SmilesRenderer, normalizeUnfe
 import { AI_MODELS, DEFAULT_MODEL_PREFERENCES, getProviderKeys } from "./ai.js";
 import { extractJson } from "./ai.js";
 import { ImageFullView, readImageDataUrl } from "./image-viewer.js";
-import { STUDY_FIGURES, findRelevantStudyFigures } from "./figure-library.js";
+import { STUDY_FIGURES, findRelevantLocalAsset, findRelevantStudyFigures } from "./figure-library.js";
 import { JEE_DIAGRAMS } from "./lib/jee-diagrams.js";
 import { sanitizeLatexForDisplay } from "./recall-math.js";
 import { buildStudyGraphResponse, findStudyGraphPreset } from "./lib/study-graph-presets.js";
@@ -94,7 +94,9 @@ VISUAL ROUTING — use the matching renderer. A mathematical graph is never a Me
 4. Scientific graphs, conics, parametric curves, and geometry: emit exactly one fenced scientific-plot JSON block with valid JSON, labeled axes, numeric domains, and data. Validate every quote, comma, bracket, and numeric coordinate before responding. Use numeric [x,y] points for scatter plots, polylines for connected curves and polygons, fnType implicit for conics, or parametric x/y functions and a t range. For Raoult's law use x_A from 0 to 1, label the axes with units, and plot both partial pressures and their total; never substitute guessed constants when the prompt supplies values. Do not emit chart JSON as ordinary prose or a generic json code block. Prefer structured points and polylines over hand-drawn SVG for plotted figures.
 5. Chemistry molecules: emit [SMILES: ...], never ASCII structures.
 For free-body diagrams, geometric shapes, coordinate figures, and patterns, use scientific-plot polygon data or a complete labeled SVG. Do not invent local figure identifiers. Keep JSON responses strictly valid when requested. Use spaces after sentence punctuation and between all words; do not concatenate headings, paragraphs, or table rows.`;
-function visualSystemRules() { return SYSTEM_PROMPT; }
+function visualSystemRules() {
+  return `${SYSTEM_PROMPT}\n\nVISUAL DESCRIPTIONS: Render every requested image, graph, chart, molecule, or diagram as a visual element only. Put its title and any plain-language explanation in ordinary prose after the visual so it appears below it. Never draw a descriptive caption, explanation, domain/range paragraph, or other prose inside image pixels. Keep only essential graph axes, symbols, and diagram labels inside the visual.`;
+}
 function wantsFunctionGraph(prompt = "") {
   const text = String(prompt || "");
   return /\b(?:graph(?:ing)?|plot(?:ting)?|curve|sketch(?:ing)?)\b|\binteractive\s+plot\b|\buse\s+function-plot\b|\buse\s+mafs\b/i.test(text)
@@ -215,8 +217,40 @@ function wantsIllustration(prompt = "") {
   const action = /\b(show|make|create|generate|draw|sketch|visuali[sz]e|give|need)\b/i;
   return visualNoun.test(prompt) && (action.test(prompt) || /^\s*(?:diagram|illustration|picture|image|drawing|schematic|infographic)\b/i.test(prompt) || /\b(?:diagram|illustration|picture|image|drawing|schematic|infographic)\s+(?:of|for|showing)\b/i.test(prompt));
 }
+function wantsImageGeneration(prompt = "") {
+  const text = String(prompt || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return /\b(?:generate|create|make|draw|produce|design)\b.{0,80}\b(?:image|picture|illustration|artwork|photo)\b/.test(text)
+    || /\b(?:image|picture|illustration|artwork|photo)\s+generation\b/.test(text);
+}
 function wantsLocalFigureAsset(prompt = "") {
-  return /\b(?:svg|asset|figure|image|picture)\b/i.test(prompt) && wantsIllustration(prompt);
+  const text = String(prompt || "");
+  if (/\bsvg\b/i.test(text) && /\b(?:image|picture|figure|asset)\b/i.test(text)) return true;
+  return /\b(?:asset|figure|image|picture)\b/i.test(text) && wantsIllustration(text);
+}
+async function searchLocalAssetWithAI(query, assets) {
+  if (!assets.length) return "";
+  const response = await fetch("/api/assistant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      task: "assistant",
+      modelOverride: "gemini-3.5-flash-lite",
+      ...getProviderKeys(),
+      messages: [
+        { role: "system", content: "Find the single best matching image from the supplied local asset catalog for the user's requested topic. The catalog is the complete set of allowed results. Return only the exact asset id from the catalog. Never suggest an external image, Wikimedia, or an id that is not listed." },
+        { role: "user", content: JSON.stringify({ topic: query, localAssets: assets }) }
+      ]
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "AI asset search failed.");
+  const answer = String(result.answer || "").trim().replace(/^```[^\n]*\n|\n```$/g, "").replace(/^['"`\s]+|['"`\s]+$/g, "");
+  if (assets.some((asset) => asset.id === answer)) return answer;
+  const exactMention = assets.filter((asset) => answer.includes(asset.id));
+  return exactMention.length === 1 ? exactMention[0].id : "";
+}
+function wantsWikimediaDiagram(prompt = "") {
+  return /\bdiagram\b/i.test(prompt) && wantsIllustration(prompt);
 }
 function wantsGeneratedVisual(prompt = "") {
   if (wantsFunctionGraph(prompt)) return false;
@@ -488,7 +522,6 @@ function SvgInteractiveGraph({ equation }) {
   const axisX = yDomain[0] <= 0 && yDomain[1] >= 0 ? py(0) : py(yDomain[0]);
   const axisY = xDomain[0] <= 0 && xDomain[1] >= 0 ? px(0) : px(xDomain[0]);
   return React.createElement("figure", { className: "math-graph-frame", "aria-label": `Graph of ${sanitizeLatexForDisplay(equation)}` },
-    React.createElement("figcaption", { className: "math-graph-heading" }, sanitizeLatexForDisplay(equation)),
     React.createElement("svg", { className: "math-graph-svg-fallback", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Function graph" },
       xTicks.map((value, index) => React.createElement("g", { key: `x-${index}` }, React.createElement("line", { x1: px(value), y1: pad.top, x2: px(value), y2: height - pad.bottom, stroke: "#e5e7eb" }), React.createElement("text", { x: px(value), y: height - 13, textAnchor: "middle" }, Math.abs(value) < 1e-8 ? "0" : Number(value.toPrecision(2)).toString()))),
       yTicks.map((value, index) => React.createElement("g", { key: `y-${index}` }, React.createElement("line", { x1: pad.left, y1: py(value), x2: width - pad.right, y2: py(value), stroke: "#e5e7eb" }), React.createElement("text", { x: pad.left - 8, y: py(value) + 4, textAnchor: "end" }, Math.abs(value) < 1e-8 ? "0" : Number(value.toPrecision(2)).toString()))),
@@ -496,7 +529,8 @@ function SvgInteractiveGraph({ equation }) {
       React.createElement("line", { x1: axisY, y1: pad.top, x2: axisY, y2: height - pad.bottom, stroke: "#64748b", strokeWidth: 1.5 }),
       curves.map((curve) => React.createElement("path", { key: curve.key, d: curve.d, fill: "none", stroke: curve.color, strokeWidth: 2.5, strokeLinecap: "round", strokeLinejoin: "round" })),
       points.map((point, index) => React.createElement("circle", { key: `point-${index}`, cx: px(point.x), cy: py(point.y), r: 5, fill: point.open ? "white" : "#2563eb", stroke: "#2563eb", strokeWidth: 2 }))
-    )
+    ),
+    React.createElement("figcaption", { className: "math-graph-heading" }, sanitizeLatexForDisplay(equation))
   );
 }
 function initialInteractiveDomain(base, values, pointsOnly) {
@@ -761,8 +795,8 @@ function InteractiveMathGraph({ equation }) {
   };
   if (plotError) return React.createElement(SvgInteractiveGraph, { equation });
   return React.createElement("figure", { className: "math-graph-frame", "aria-label": `Graph of ${sanitizeLatexForDisplay(equation)}` },
-    React.createElement("figcaption", { className: "math-graph-heading" }, sanitizeLatexForDisplay(equation)),
     React.createElement("div", { ref: containerRef, className: "interactive-math-graph-plot", onPointerDown: handlePlotPointerDown, onPointerMove: handlePlotPointerDown, style: { color: "black", width: "100%", minWidth: 0, touchAction: "none" } }),
+    React.createElement("figcaption", { className: "math-graph-heading" }, sanitizeLatexForDisplay(equation)),
     tapCoordinates && React.createElement("div", { className: "math-graph-coordinate", role: "status", "aria-live": "polite" }, `x = ${tapCoordinates.x.toFixed(2)}  ·  y = ${tapCoordinates.y.toFixed(2)}`)
   );
 }
@@ -885,7 +919,7 @@ function AssistantMessageContent({ message, previousMessage }) {
         if (figure && usedVisualAssets.has(assetKey(figure.src))) return null;
         if (figure) usedVisualAssets.add(assetKey(figure.src));
         return figure
-          ? React.createElement(AssistantMarkdownImage, { key: `${key}-figure-${index}`, src: figure.src, alt: figure.title, caption: figure.title, boundedBox })
+          ? React.createElement(AssistantMarkdownImage, { key: `${key}-figure-${index}`, src: figure.src, alt: figure.title, caption: wantsLocalFigureAsset(precedingPrompt) ? "" : figure.title, aiCaption: wantsLocalFigureAsset(precedingPrompt) ? precedingPrompt : "", boundedBox })
           : React.createElement(AssistantSearchImage, { key: `${key}-figure-search-${index}`, query: figureTag[1].trim(), boundedBox });
       }
       const wikiTag = chunk.match(/^\[WIKI_IMAGE:\s*([^\]]+)\]$/i);
@@ -1070,6 +1104,50 @@ function AssistantGeneratedImage({ src }) {
   if (failed) return null;
   return React.createElement("img", { className: "assistant-generated-image", src, alt: "Concept diagram", loading: "eager", onError: () => setFailed(true) });
 }
+function AssistantAssetCaption({ title, query, src }) {
+  const [caption, setCaption] = useState("");
+  useEffect(() => {
+    let active = true;
+    const describe = async () => {
+      const prompt = `Describe this local study figure in one brief, factual sentence. The sentence will be shown below the image. Figure title: ${title}. User topic: ${query}. Do not invent details that are not visible. Use plain text only: no Markdown, LaTeX, dollar signs, or backslashes.`;
+      let content = prompt;
+      try {
+        const response = await fetch(src);
+        const image = await response.blob();
+        if (response.ok && /^image\/(?:png|jpe?g|webp|gif)$/i.test(image.type)) {
+          const bytes = new Uint8Array(await image.arrayBuffer());
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+          content = [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: `data:${image.type};base64,${btoa(binary)}` } }];
+        } else if (response.ok && /\.svg(?:[?#]|$)/i.test(src)) {
+          content = `${prompt}\nSVG source:\n${(await image.text()).slice(0, 12000)}`;
+        }
+      } catch {}
+      const response = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: "assistant", modelOverride: "gemini-3.5-flash-lite", ...getProviderKeys(), messages: [
+          { role: "system", content: "Write one brief, factual plain-text sentence to display below the supplied study figure. Do not use Markdown, LaTeX, dollar signs, or backslashes. Return only the caption." },
+          { role: "user", content }
+        ] })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (active && response.ok && data.answer) {
+        const plainCaption = String(data.answer).trim().replace(/^['"\s]+|['"\s]+$/g, "")
+          .replace(/\\(?:left|right)\b/g, "")
+          .replace(/\\(?:cos|sin|tan)\b/g, (command) => ({ "\\cos": "cosine", "\\sin": "sine", "\\tan": "tangent" }[command] || command))
+          .replace(/\\infty\b/g, "infinity").replace(/\\in\b/g, "in").replace(/\\pi\b/g, "pi")
+          .replace(/\\(?:leq|le)\b/g, "is less than or equal to").replace(/\\(?:geq|ge)\b/g, "is greater than or equal to")
+          .replace(/\\times\b/g, "times").replace(/\\sqrt\s*\{([^{}]+)\}/g, "square root of $1")
+          .replace(/\\[a-zA-Z]+/g, "").replace(/[$`{}]/g, "").replace(/\s+/g, " ").trim();
+        setCaption(plainCaption.slice(0, 260));
+      }
+    };
+    describe().catch(() => {});
+    return () => { active = false; };
+  }, [title, query, src]);
+  return React.createElement("figcaption", { "aria-live": "polite" }, caption || `Showing ${title}.`);
+}
 function AssistantSearchImage({ query, boundedBox }) {
   const [result, setResult] = useState({ images: [], index: 0 });
   const [loading, setLoading] = useState(true);
@@ -1137,20 +1215,24 @@ function AssistantSearchImage({ query, boundedBox }) {
     React.createElement("figcaption", null, image.pageUrl ? React.createElement("a", { href: image.pageUrl, target: "_blank", rel: "noreferrer" }, image.title || query) : (image.title || query), image.license ? ` · ${image.license}` : " · Wikimedia Commons")
   );
 }
-function AssistantMarkdownImage({ src, alt = "Study diagram", caption = "", boundedBox, ...props }) {
+function AssistantMarkdownImage({ src, alt = "Study diagram", caption = "", aiCaption = "", boundedBox, ...props }) {
   const [loaded, setLoaded] = useState(false);
-  return React.createElement("figure", { className: "assistant-reference-figure" }, React.createElement("div", { className: `bg-white rounded-xl p-4 shadow-sm text-black w-full flex flex-col items-center assistant-image-scroll assistant-bounded-box ${boundedBox} ${loaded ? "is-loaded" : "is-loading"}` },
-    !loaded && React.createElement("div", { className: "assistant-image-skeleton", role: "status", "aria-label": `Loading ${alt}` }),
-    React.createElement(ImageFullView, {
-      ...props,
-      src,
-      alt,
-      loading: "eager",
-      className: `assistant-markdown-image ${loaded ? "is-loaded" : ""}`,
-      onLoad: (event) => { props.onLoad?.(event); setLoaded(true); },
-      onError: (event) => { props.onError?.(event); setLoaded(true); }
-    })
-  ), caption && React.createElement("figcaption", null, caption));
+  return React.createElement("figure", { className: "assistant-reference-figure" },
+    React.createElement("div", { className: `bg-white rounded-xl p-4 shadow-sm text-black w-full flex flex-col items-center assistant-image-scroll assistant-bounded-box ${boundedBox} ${loaded ? "is-loaded" : "is-loading"}` },
+      !loaded && React.createElement("div", { className: "assistant-image-skeleton", role: "status", "aria-label": `Loading ${alt}` }),
+      React.createElement(ImageFullView, {
+        ...props,
+        src,
+        alt,
+        loading: "eager",
+        className: `assistant-markdown-image ${loaded ? "is-loaded" : ""}`,
+        onLoad: (event) => { props.onLoad?.(event); setLoaded(true); },
+        onError: (event) => { props.onError?.(event); setLoaded(true); }
+      })
+    ),
+    caption && React.createElement("figcaption", null, caption),
+    aiCaption && React.createElement(AssistantAssetCaption, { title: caption || alt, query: aiCaption, src })
+  );
 }
 class MarkdownErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { failed: false }; }
@@ -1597,17 +1679,38 @@ ${item.transcript}` : `
         return { role: message.role, content: message.id === user.id && message.attachments?.some((file) => file.data) ? [{ type: "text", text: bounded }, ...message.attachments.filter((file) => file.data).slice(0, 3).map((file) => ({ type: "image_url", image_url: { url: file.data } }))] : bounded };
       });
       const requestText = String(user.content).toLowerCase();
-      const localFigureRequest = wantsLocalFigureAsset(promptText);
-      const localFigureId = localFigureRequest ? findRelevantStudyFigures(promptText, 1)[0] : "";
-      const functionPlotRequest = wantsFunctionGraph(promptText) && !localFigureRequest;
-      const visualRequest = localFigureRequest || wantsGeneratedVisual(promptText) || functionPlotRequest;
+      const imageGenerationRequest = wantsImageGeneration(promptText);
+      const selectedImageModel = AI_MODELS.find((model) => model.kind === "image" && model.id === selectedModelOverride)?.id || "gemini-nano-banana-2.1";
+      const functionGraphRequest = !imageGenerationRequest && wantsFunctionGraph(promptText);
+      const localFigureRequest = !imageGenerationRequest && !functionGraphRequest && wantsLocalFigureAsset(promptText);
+      const localFigure = localFigureRequest ? await findRelevantLocalAsset(promptText, (assets) => searchLocalAssetWithAI(promptText, assets)) : null;
+      const localFigureId = localFigure?.id || "";
+      const wikimediaDiagramRequest = !imageGenerationRequest && !localFigureRequest && wantsWikimediaDiagram(promptText);
+      const functionPlotRequest = functionGraphRequest && !localFigureRequest;
+      const visualRequest = imageGenerationRequest || localFigureRequest || wikimediaDiagramRequest || wantsGeneratedVisual(promptText) || functionPlotRequest;
       const needsSearch = !visualRequest && /\b(latest|current|today|news|price|recent|source|cite|search|update|verify|verified|accurate data)\b/.test(requestText);
       const systemPrompt = visualSystemRules();
       const requestMessages = [{ role: "system", content: systemPrompt }, ...history];
-      const studyGraph = functionPlotRequest ? findStudyGraphPreset(promptText) : null;
+      const studyGraph = !imageGenerationRequest && functionPlotRequest ? findStudyGraphPreset(promptText) : null;
       let result;
-      if (studyGraph) {
+      if (imageGenerationRequest) {
+        let response;
+        try {
+          response = await fetch("/api/assistant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task: "visual", messages: requestMessages, modelOverride: selectedImageModel, ...getProviderKeys() })
+          });
+        } catch {
+          throw new Error("Can’t reach the image generation service right now. Check your connection and try again.");
+        }
+        result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Gemini image generation failed.");
+      } else if (studyGraph) {
         result = { answer: buildStudyGraphResponse(studyGraph), provider: "Apex graph library" };
+      } else if (wikimediaDiagramRequest) {
+        const query = promptText.replace(/\b(?:show|find|give|make|create|generate|draw|me|a|an|the|diagram|of|for|about|please)\b/gi, " ").replace(/\s+/g, " ").trim() || promptText;
+        result = { answer: `[WIKI_IMAGE: ${query}]`, provider: "Wikimedia Commons" };
       } else if (localFigureRequest) {
         result = {
           answer: localFigureId ? `[FIGURE: ${localFigureId}]` : "No matching figure is available in the local figure assets.",
@@ -1631,7 +1734,7 @@ ${item.transcript}` : `
       const graphReadyAnswer = studyGraph
         ? rawAnswer
         : ensureRaoultScientificGraph(promptText, ensureRequestedGraph(promptText, rawAnswer));
-      const figureReadyAnswer = !localFigureId && !functionPlotRequest && wantsGeneratedVisual(promptText)
+      const figureReadyAnswer = !imageGenerationRequest && !localFigureId && !wikimediaDiagramRequest && !functionPlotRequest && wantsGeneratedVisual(promptText)
         ? preferLocalStudyFigure(promptText, graphReadyAnswer)
         : graphReadyAnswer;
       const answer = removeDuplicatePlotFallback(normalizeUnfencedMermaid(figureReadyAnswer)).trim();

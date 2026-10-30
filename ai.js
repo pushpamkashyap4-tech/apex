@@ -10,32 +10,16 @@ export const AI_MODELS = [
   { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview", kind: "chat", tags: ["Google", "reasoning"] },
   { id: "gemini-pro-latest", label: "Gemini Pro Latest", kind: "chat", tags: ["Google", "reasoning"] },
   { id: "gemini-flash-latest", label: "Gemini Flash Latest", kind: "chat", tags: ["Google", "general"] },
-  { id: "gemini-flash-lite-latest", label: "Gemini Flash Lite Latest", kind: "chat", tags: ["Google", "fast"] }
+  { id: "gemini-flash-lite-latest", label: "Gemini Flash Lite Latest", kind: "chat", tags: ["Google", "fast"] },
+  { id: "whisper-large-v3-turbo", label: "Groq · Whisper Large V3 Turbo", kind: "transcription", tags: ["Groq", "fast"] },
+  { id: "whisper-large-v3", label: "Groq · Whisper Large V3", kind: "transcription", tags: ["Groq", "accuracy"] },
+  { id: "gemini-3.5-transcribe", label: "Gemini 3.5 Transcribe", kind: "transcription", tags: ["Google", "multilingual"] },
+  { id: "gemini-nano-banana-2.1", label: "Gemini Nano Banana 2.1", kind: "image", tags: ["Google", "image"] },
+  { id: "gemini-3.1-flash-image", label: "Gemini Nano Banana 2", kind: "image", tags: ["Google", "image"] },
+  { id: "gemini-3.1-flash-lite-image", label: "Gemini Nano Banana 2 Lite", kind: "image", tags: ["Google", "image", "fast"] }
 ];
 
 export const CHAT_MODELS = AI_MODELS.filter((model) => model.kind === "chat");
-// Websim previews provide their own chat runtime and do not run this project's
-// Vercel /api functions. Deployed Vercel builds use the same-origin API below.
-export async function requestAssistantCompletion(messages, options = {}) {
-  const websimChat = globalThis.websim?.chat?.completions;
-  if (typeof websimChat?.create === "function") {
-    const completion = await websimChat.create({
-      messages: messages.map((message) => ({ role: message.role, content: message.content })),
-      ...(options.json ? { json: true } : {})
-    });
-    const answer = typeof completion?.content === "string" ? completion.content.trim() : "";
-    if (!answer) throw new Error("The assistant returned an empty reply. Please try again.");
-    return { answer, provider: "Websim AI" };
-  }
-  const response = await fetch("/api/assistant", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ task: options.task || "assistant", messages, googleSearch: options.googleSearch, modelOverride: options.modelOverride || "auto", ...getProviderKeys() })
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || "The assistant is temporarily unavailable. Please try again.");
-  return result;
-}
 export async function generateGraph(graphType, parameters = {}) {
   const prompt = typeof parameters.prompt === "string" ? parameters.prompt : JSON.stringify(parameters);
   const response = await fetch("/api/assistant", { method: "POST", headers: { "Content-Type": "application/json" },

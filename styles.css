@@ -4484,7 +4484,7 @@ html[data-mode="dark"] .assistant-page.has-chat .assistant-answer .assistant-mar
 }
 .math-graph-frame > .bg-white,
 .scientific-graph-frame > .bg-white { display:contents; }
-.math-graph-frame .math-graph-heading { margin-bottom:8px; }
+.math-graph-frame .math-graph-heading { margin:8px 6px 0; }
 .math-graph-svg-fallback { display:block; width:100%; height:auto; min-height:260px; overflow:visible; color:#334155; font:12px "DM Sans",sans-serif; }
 .math-graph-svg-fallback text { fill:currentColor; }
 .assistant-table-scroll {

@@ -99,10 +99,29 @@ function migrateChapterKeyedState(records = {}) {
   return migrated;
 }
 const DEFAULT_HANDBOOKS = [
-  { id: "builtin-handbook-physics", subject: "Physics", name: "Physics.pdf", size: 1168739, url: "./assets/handbooks/physics.pdf", remoteUrl: "", uploadedAt: "2026-09-30", builtin: true },
-  { id: "builtin-handbook-chemistry", subject: "Chemistry", name: "Chemistry.pdf", size: 2143520, url: "./assets/handbooks/chemistry.pdf", remoteUrl: "", uploadedAt: "2026-09-30", builtin: true },
-  { id: "builtin-handbook-maths", subject: "Maths", name: "Maths.pdf", size: 1256085, url: "./assets/handbooks/maths.pdf", remoteUrl: "", uploadedAt: "2026-09-30", builtin: true }
+  { id: "builtin-handbook-physics", subject: "Physics", name: "Physics.pdf", size: 1168739, url: "/assets/handbooks/physics.pdf", remoteUrl: "", uploadedAt: "2026-09-30", builtin: true },
+  { id: "builtin-handbook-chemistry", subject: "Chemistry", name: "Chemistry.pdf", size: 2143520, url: "/assets/handbooks/chemistry.pdf", remoteUrl: "", uploadedAt: "2026-09-30", builtin: true },
+  { id: "builtin-handbook-maths", subject: "Maths", name: "Maths.pdf", size: 1256085, url: "/assets/handbooks/maths.pdf", remoteUrl: "", uploadedAt: "2026-09-30", builtin: true }
 ];
+async function fetchHandbookBytes(source) {
+  const raw = String(source || "").trim();
+  if (!raw) throw new Error("This PDF is no longer available on this device. Upload it again to read it here.");
+  const isAbsolute = /^(?:https?:|blob:|data:)/i.test(raw);
+  const rootPath = isAbsolute ? raw : `/${raw.replace(/^\/+|^(?:\.\/)+/g, "").replace(/^public\//, "")}`;
+  const candidates = isAbsolute ? [raw] : [...new Set([rootPath, `/public${rootPath}`])];
+  let lastError;
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { cache: "no-cache" });
+      if (!response.ok) { lastError = new Error(`PDF request failed (${response.status}).`); continue; }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const header = new TextDecoder().decode(bytes.subarray(0, 5));
+      if (header !== "%PDF-") { lastError = new Error(`The file at ${url} is not a readable PDF.`); continue; }
+      return bytes;
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error("This PDF could not be loaded.");
+}
 const AppSettingsContext = React.createContext(null);
 const useAppSettings = () => React.useContext(AppSettingsContext);
 const NAV_ITEMS = [
@@ -3902,7 +3921,7 @@ function HandbookPdfReader({ document: pdfDocument, onClose }) {
         pdfjs.GlobalWorkerOptions.workerSrc = new URL("./pdf.worker.min.mjs", import.meta.url).href;
         const task = pdfDocument.remoteUrl
           ? pdfjs.getDocument({ url: source })
-          : pdfjs.getDocument({ data: new Uint8Array(await (await fetch(source)).arrayBuffer()) });
+          : pdfjs.getDocument({ data: await fetchHandbookBytes(source) });
         loadedPdf = await task.promise;
         const loadedPages = await Promise.all(Array.from({ length: loadedPdf.numPages }, (_, index) => loadedPdf.getPage(index + 1)));
         if (active) {
@@ -4098,7 +4117,7 @@ async function openHandbookDocument(document2) {
     let source = document2.remoteUrl || document2.url;
     if (document2.localFileId) source = await loadLocalFile(document2.localFileId);
     if (!source) throw new Error("This PDF is no longer available on this device. Upload it again.");
-    const blob = await (await fetch(source)).blob();
+    const blob = new Blob([await fetchHandbookBytes(source)], { type: "application/pdf" });
     const objectUrl = URL.createObjectURL(blob);
     popup.opener = null;
     popup.location.replace(objectUrl);
