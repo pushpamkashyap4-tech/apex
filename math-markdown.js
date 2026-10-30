@@ -1,13 +1,13 @@
 import { jsx } from "react/jsx-runtime";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import functionPlot from "function-plot";
+import mermaid from "mermaid";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { normalizeMathMarkup, prepareAssistantMath, protectGfmTableBlocks, sanitizeLatexForDisplay, sanitizeLatexOutput } from "./recall-math.js";
+import { containsUnrenderedLatex, normalizeMathMarkup, prepareAssistantMath, protectGfmTableBlocks, sanitizeLatexForDisplay, sanitizeLatexOutput } from "./recall-math.js";
 const GRAPH_COLORS = ["#4f46e5", "#0891b2", "#db2777", "#16a34a", "#d97706", "#7c3aed", "#dc2626", "#475569"];
 function piTicks(domain) {
   const unit = Math.PI / 2;
@@ -83,12 +83,17 @@ function promoteLongInlineEquations(source) {
     if (!part.startsWith("$") || part.startsWith("$$")) return part;
     const formula = part.slice(1, -1).trim();
     const fractionCount = (formula.match(/\\(?:d?frac|tfrac)\b/g) || []).length;
-    const isLong = formula.length >= 72 || (formula.length >= 44 && fractionCount >= 2);
+    const isLong = formula.length >= 64
+      || (formula.length >= 42 && fractionCount >= 2)
+      || (formula.length >= 48 && /\\(?:int|sum|prod|lim)\b/.test(formula));
     return isLong ? `\n\n$$\n${formula}\n$$\n\n` : part;
   }).join("");
 }
 function repairMalformedLatex(value) {
   let repaired = String(value || "")
+    // KaTeX uses \csc for cosecant; common JEE notation often writes
+    // \cosec, which KaTeX otherwise renders as an unknown command.
+    .replace(/\\(?:cosec|cosecant)\b/gi, "\\csc")
     // `ldfrac` is common in older reference text but is not a KaTeX command.
     // Convert it to the supported display-style fraction before parsing.
     .replace(/\\+ldfrac\b/g, "\\dfrac")
@@ -263,10 +268,15 @@ function normalizeUnfencedMermaid(value) {
     const text = line.trim();
     return !text || /^%%/.test(text)
       || /^(?:subgraph\b|end\s*$|direction\b|classDef\b|class\b|style\b|linkStyle\b|click\b|accTitle\b|accDescr\b)/i.test(text)
+      || /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*(?:-->|---|-.->|==>|--o|--x|<--|<-->|-\.-)\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*$/.test(text)
       || (/^[A-Za-z_][\w.-]*\b/.test(text)
         && (/(?:-->|---|-.->|==>|--o|--x|<--|<-->|-\.-|\|[^|]*\|)/.test(text)
           || /\[[^\]]*\]|\([^()\n]*\)|\{[^{}\n]*\}/.test(text)));
   };
+  const normalizeNumericEdge = (line) => line.replace(/^([ \t]*)([+-]?(?:\d+(?:\.\d*)?|\.\d+))([ \t]*(?:-->|---|-.->|==>|--o|--x|<--|<-->|-\.-)[ \t]*)([+-]?(?:\d+(?:\.\d*)?|\.\d+))([ \t]*)$/, (_match, leading, from, edge, to, trailing) => {
+    const id = (value) => `n_${value.replace(/^\+/, "").replace(/-/g, "m").replace(/\./g, "_")}`;
+    return `${leading}${id(from)}["${from}"]${edge}${id(to)}["${to}"]${trailing}`;
+  });
   return String(value || "").split(fenced).map((segment) => {
     if (segment.startsWith(fence) || segment.startsWith("~~~")) return segment;
     const lines = segment.split("\n");
@@ -283,7 +293,7 @@ function normalizeUnfencedMermaid(value) {
       let cursor = headerIndex + 1;
       while (cursor < lines.length) {
         if (isDiagramLine(lines[cursor])) {
-          body.push(lines[cursor].trim());
+          body.push(normalizeNumericEdge(lines[cursor]).trim());
           cursor += 1;
           continue;
         }
@@ -364,7 +374,7 @@ function wrapUnmarkedLatex(line) {
     }
     return start;
   };
-  const commandPattern = /\\(?:displaystyle|textstyle|dfrac|tfrac|frac|sqrt|sum|prod|int|oint|lim|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|log|ln|exp|theta|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|iota|kappa|lambda|mu|nu|xi|omicron|pi|rho|sigma|tau|upsilon|phi|varphi|chi|psi|omega|infty|cdot|times|pm|mp|circ|degree|Delta|Sigma|partial|nabla|text|mathbb|mathrm|mathbf|mathcal|operatorname|overline|underline|overrightarrow|overleftarrow|overbrace|underbrace|vec|widehat|widetilde|lvert|rvert|langle|rangle|leq|geq|neq|approx|equiv|rightarrow|Rightarrow)\b/g;
+  const commandPattern = /\\(?:displaystyle|textstyle|dfrac|tfrac|frac|sqrt|sum|prod|int|oint|lim|left|right|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|log|ln|exp|theta|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|iota|kappa|lambda|mu|nu|xi|omicron|pi|rho|sigma|tau|upsilon|phi|varphi|chi|psi|omega|infty|cdot|times|pm|mp|circ|degree|Delta|Sigma|partial|nabla|text|mathbb|mathrm|mathbf|mathcal|operatorname|overline|underline|overrightarrow|overleftarrow|overbrace|underbrace|vec|widehat|widetilde|lvert|rvert|langle|rangle|leq|geq|neq|approx|equiv|rightarrow|Rightarrow)(?![A-Za-z])/g;
   const insertions = [];
   let command;
   while ((command = commandPattern.exec(output))) {
@@ -412,19 +422,81 @@ function wrapUnmarkedLatex(line) {
       cursor = next;
     }
     end = Math.max(end, cursor);
-    if (output[end] === "(" && /\\(?:sum|prod|int)\b/.test(command[0])) {
-      const close = output.indexOf(")", end + 1);
-      if (close !== -1) end = close + 1;
+    const functionCommand = /\\(?:sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|log|ln|exp)\b/i.test(command[0]);
+    if (output[end] === "(" && (/\\(?:sum|prod|int)\b/.test(command[0]) || functionCommand)) {
+      let depth = 0;
+      for (let index = end; index < output.length; index += 1) {
+        if (output[index] === "(") depth += 1;
+        else if (output[index] === ")" && --depth === 0) { end = index + 1; break; }
+      }
+    } else if (functionCommand && /^\\left\s*\(/.test(output.slice(end))) {
+      const opening = output.slice(end).match(/^\\left\s*\(/)?.[0] || "";
+      let depth = 0;
+      for (let index = end + opening.length - 1; index < output.length; index += 1) {
+        if (output[index] === "(") depth += 1;
+        else if (output[index] === ")" && --depth === 0) {
+          const right = /^\\right\s*\)/.exec(output.slice(index + 1));
+          end = index + 1 + (right?.[0].length || 0);
+          break;
+        }
+      }
+    } else if (functionCommand && /\\(?:arcsin|arccos|arctan|csc)\b/i.test(command[0]) && /^[_^]\{?-?1\}?/.test(output.slice(end))) {
+      const script = output.slice(end).match(/^[_^]\{?-?1\}?/);
+      end += script?.[0].length || 0;
+      if (/^[A-Za-z]/.test(output[end] || "")) end += 1;
+    } else if (functionCommand && /\\(?:arcsin|arccos|arctan|csc)\b/i.test(command[0])
+      && /[_^]\{?-?1\}?/.test(output.slice(start, end)) && /^[A-Za-z]/.test(output[end] || "")) {
+      end += 1;
+    } else if (functionCommand && /^\s+[A-Za-z](?![A-Za-z])/.test(output.slice(end))) {
+      end += output.slice(end).match(/^\s+[A-Za-z]/)?.[0].length || 0;
+    }
+    // Keep an integral's integrand and differential together with its limits.
+    // Without this, `\int_{0}^{1} \ln(x)\,dx` becomes three unrelated spans.
+    if (/\\(?:int|oint)\b/.test(command[0])) {
+      let cursor = end;
+      while (/[ \t]/.test(output[cursor] || "")) cursor += 1;
+      const integrandCommand = /\\(?:ln|log|sin|cos|tan|cot|sec|csc|exp|sqrt|frac|dfrac|tfrac)\b/.exec(output.slice(cursor));
+      if (integrandCommand?.index === 0) {
+        cursor += integrandCommand[0].length;
+        while (/[ \t]/.test(output[cursor] || "")) cursor += 1;
+        if (output[cursor] === "(") {
+          let depth = 0;
+          for (let index = cursor; index < output.length; index += 1) {
+            if (output[index] === "(") depth += 1;
+            else if (output[index] === ")" && --depth === 0) { cursor = index + 1; break; }
+          }
+        } else if (output[cursor] === "{") {
+          cursor = groupEnd(output, cursor);
+        } else if (/^[A-Za-z0-9]/.test(output[cursor] || "")) {
+          cursor += 1;
+        }
+        const differential = /^[ \t]*(?:\\,)?d\s*[A-Za-z]/.exec(output.slice(cursor));
+        if (differential) cursor += differential[0].length;
+        end = cursor;
+      }
+    }
+    const equationTail = /^[ \t]*(?:=|<|>)[ \t]*/.exec(output.slice(end));
+    if (equationTail) {
+      const tailStart = end + equationTail[0].length;
+      const punctuation = output.slice(tailStart).search(/[;,!?]/);
+      const tailEnd = punctuation < 0 ? output.length : tailStart + punctuation;
+      const tail = output.slice(end, tailEnd);
+      if (!/\b(?:and|as|because|from|if|is|are|or|since|so|the|then|therefore|when|where|which|with)\b/i.test(tail)) end = tailEnd;
     }
     insertions.push({ start, end });
     commandPattern.lastIndex = end;
   }
   for (const range of insertions.reverse()) {
-    if (output[range.start - 1] === "$" || output[range.end] === "$") continue;
-    output = `${output.slice(0, range.start)}$${output.slice(range.start, range.end)}$${output.slice(range.end)}`;
+    let end = range.end;
+    while (end > range.start && /\s/.test(output[end - 1])) end -= 1;
+    if (output[range.start - 1] === "$") continue;
+    const separator = output[end] === "$" ? " " : "";
+    output = `${output.slice(0, range.start)}$${output.slice(range.start, end)}$${separator}${output.slice(end)}`;
   }
   output = output.replace(/\b([A-Za-z][A-Za-z0-9]*)\s*([_^])\s*(\{(?:[^{}]|\{[^{}]*\})*\}|[A-Za-z0-9]+)/g, (match, variable, script, value, offset, source) => {
-    if (source[offset - 1] === "$" || source[offset + match.length] === "$") return match;
+    const precedingDollars = (source.slice(0, offset).match(/(?<!\\)\$/g) || []).length;
+    if (precedingDollars % 2 === 1) return match;
+    if (source[offset - 1] === "$" || source[offset - 1] === "\\" || source[offset + match.length] === "$") return match;
     return `$${match.replace(/\s+/g, "")}$`;
   });
   if ((output.match(/\|/g) || []).length >= 2 && /\\[A-Za-z]+/.test(output)) {
@@ -595,6 +667,8 @@ function parseMathFunction(source) {
       .replace(/\bacsc\s*\(\s*csc\s*\(\s*x\s*\)\s*\)/gi, "asin(sin(x))")
       .replace(/\\(?:left|right)\s*/g, "")
       .replace(/\bsgn\b/gi, "sign")
+      .replace(/\b(?:arccosec(?:ant)?|acosec(?:ant)?)\b/gi, "acsc")
+      .replace(/\b(?:cosecant|cosec)\s*\(/gi, "csc(")
       .replace(/\\cdot\b/g, "*")
       .replace(/\\pi\b/g, "pi")
       .replace(/\\(?:arcsin|arccos|arctan|arccot|arcsec|arccsc)\b/gi, (name) => ({ arcsin: "asin", arccos: "acos", arctan: "atan", arccot: "acot", arcsec: "asec", arccsc: "acsc" }[name.slice(1).toLowerCase()] || name))
@@ -615,10 +689,11 @@ function parseMathFunction(source) {
       .replace(/\b(?:acot|arccot)\b/gi, "acot")
       .replace(/\b(?:asec|arcsec)\b/gi, "asec")
       .replace(/\b(?:acsc|arccsc)\b/gi, "acsc")
-      .replace(/\\?(sin|cos|tan)\s*\^\s*\{?-1\}?/gi, (match, name) => ({ sin: "asin", cos: "acos", tan: "atan" }[name.toLowerCase()]))
+      .replace(/\\?(sin|cos|tan|cot|sec|csc|cosec)\s*\^\s*\{?-1\}?/gi, (_match, name) => ({ sin: "asin", cos: "acos", tan: "atan", cot: "acot", sec: "asec", csc: "acsc", cosec: "acsc" }[name.toLowerCase()]))
       .replace(/\bln\b/g, "log")
       .replace(/\|([^|]+)\|/g, "abs($1)")
       .replace(/π/g, "pi")
+      .replace(/^\\?\{\s*x\s*\\?\}$/i, "(x-floor(x))")
       .replace(/²/g, "^2")
       .replace(/³/g, "^3")
       .replace(/\\sqrt\s*\{([^{}]+)\}/g, "sqrt($1)")
@@ -785,293 +860,144 @@ function svgSourceFromCodeBlock(children) {
     ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400">${source}</svg>`
     : "";
 }
-function MathGraph({ source, title: suppliedTitle = "" }) {
-  const targetRef = useRef(null);
-  const axisDomainsRef = useRef({ x: [-10, 10], y: [-10, 10] });
-  const [tapCoordinates, setTapCoordinates] = useState(null);
-  const [fallback, setFallback] = useState(false);
-  const graph = React.useMemo(() => {
-    try { return parseMathFunction(source); } catch { return ""; }
-  }, [source, suppliedTitle]);
-  const expression = graph?.expression || "";
-  const hasGraph = Boolean(expression || graph?.points?.length);
-  const legendEntries = [
-    ...(graph?.functions || []).map((fn, index) => ({ type: "function", fn, index })),
-    ...(graph?.points?.some((point) => !point.open) ? [{ type: "point", open: false }] : []),
-    ...(graph?.points?.some((point) => point.open) ? [{ type: "point", open: true }] : [])
-  ];
+function CanvasGraph({ functions = [], points = [], xDomain = [-10, 10], yDomain = [-10, 10], title = "", caption = "", className = "math-graph" }) {
+  const canvasRef = useRef(null);
+  const viewRef = useRef({ x: [...xDomain], y: [...yDomain] });
+  const dragRef = useRef(null);
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
+  const [revision, setRevision] = useState(0);
+  const expressions = React.useMemo(() => functions.map((item) => {
+    const source = String(item.expression || item.fn || "").replace(/\bpi\b/gi, "Math.PI").replace(/\be\b/g, "Math.E");
+    if (!/^[\w+\-*/^().,\s]*$/.test(source)) return null;
+    const js = source.replace(/\^/g, "**").replace(/\b(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sqrt|abs|exp|log|floor|ceil|round|min|max|sign)\s*\(/gi, "Math.$1(");
+    try { return { ...item, evaluate: new Function("x", "y", "t", `"use strict"; return (${js});`) }; } catch { return null; }
+  }).filter(Boolean), [functions]);
   useEffect(() => {
-    let active = true;
-    let resizeObserver;
-    const target = targetRef.current;
-    setFallback(!hasGraph);
-    if (!target || !hasGraph) return undefined;
-    const render = () => {
-      const plotFn = typeof functionPlot === "function" ? functionPlot : functionPlot.default;
-      try {
-        const availableWidth = target.clientWidth || target.getBoundingClientRect().width || 450;
-        const width = Math.max(240, Math.min(720, Math.floor(availableWidth)));
-        const height = 350;
-        const tangentFunctions = graph.functions.filter((fn) => /^(?:tan\s*\(\s*x\s*\)|1\s*\/\s*(?:tan|sin|cos)\s*\(\s*x\s*\))$/i.test(fn.expression.replace(/\s+/g, "")));
-        const inverseKinds = [...new Set(graph.functions.map((fn) => fn.inverseFunction).filter(Boolean))];
-        const inverseTrigFunctions = inverseKinds.length > 0;
-        const trigInputAxis = graph.functions.some((fn) => !fn.inverseFunction && (/\b(?:sin|cos|tan|cot|sec|csc)\s*\(/i.test(fn.expression) || /\b(?:sin|cos|tan|cot|sec|csc)\s*\(/i.test(fn.display)));
-        const pointsOnly = graph.functions.length === 0;
-        const periodicTrig = graph.functions.some((fn) => /\b(?:sin|cos|tan|cot|sec|csc)\s*\(/i.test(fn.display) || /\b(?:sin|cos|tan|cot|sec|csc)\s*\(/i.test(fn.expression));
-        const stepKinds = graph.functions.map((fn) => fn.fnType);
-        const logarithmic = graph.functions.some((fn) => /^(?:log|ln)\s*\(/i.test(fn.display) || /^(?:log|ln)\s*\(/i.test(fn.expression));
-        const exponential = graph.functions.some((fn) => /^exp\s*\(\s*x\s*\)$/i.test(fn.expression) || /e\s*\^\s*x/i.test(fn.display));
-        const signGraph = stepKinds.includes("sign");
-        const fractionalGraph = stepKinds.includes("fractional");
-        const inverseYDomains = {
-          asin: [-Math.PI / 2 - 0.4, Math.PI / 2 + 0.4],
-          acos: [-0.4, Math.PI + 0.4],
-          atan: [-Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
-          acot: [-0.5, Math.PI + 0.5],
-          asec: [-0.5, Math.PI + 0.5],
-          acsc: [-Math.PI / 2 - 0.5, Math.PI / 2 + 0.5]
-        };
-        const inverseXDomain = inverseKinds.some((name) => name === "asin" || name === "acos") ? [-1.25, 1.25]
-          : inverseKinds.some((name) => name === "asec" || name === "acsc") ? [-6, 6] : [-8, 8];
-        const inverseYDomain = inverseKinds.length
-          ? [Math.min(...inverseKinds.map((name) => inverseYDomains[name][0])), Math.max(...inverseKinds.map((name) => inverseYDomains[name][1]))]
-          : [-10, 10];
-        const defaultXDomain = inverseTrigFunctions ? inverseXDomain : periodicTrig ? [-2 * Math.PI, 2 * Math.PI]
-          : logarithmic ? [-1, 10] : exponential ? [-4, 4]
-            : signGraph || fractionalGraph || stepKinds.some((kind) => ["step", "step-ceil", "step-round"].includes(kind)) ? [-5, 5] : [-10, 10];
-        const defaultYDomain = inverseTrigFunctions ? inverseYDomain : signGraph ? [-2, 2] : fractionalGraph ? [-0.5, 1.5]
-          : periodicTrig ? (tangentFunctions.length ? [-6, 6] : [-2, 2])
-            : logarithmic ? [-4, 4] : exponential ? [-1, 12]
-              : stepKinds.some((kind) => ["step", "step-ceil", "step-round"].includes(kind)) ? [-5, 5] : defaultXDomain;
-        const xDomain = graph.axisDomains.x || (pointsOnly ? extendGraphDomain(defaultXDomain, graph.points.map((point) => point.x), true) : defaultXDomain);
-        const yDomain = graph.axisDomains.y || (pointsOnly ? extendGraphDomain(defaultYDomain, graph.points.map((point) => point.y), true) : defaultYDomain);
-        const squareDomains = textbookSquareDomains(xDomain, yDomain);
-        const preserveAxisDomains = inverseTrigFunctions || periodicTrig || logarithmic || exponential || signGraph || fractionalGraph || stepKinds.some((kind) => ["step", "step-ceil", "step-round"].includes(kind)) || Boolean(graph.axisDomains.x || graph.axisDomains.y);
-        const initialXDomain = preserveAxisDomains ? xDomain : squareDomains.x;
-        const initialYDomain = preserveAxisDomains ? yDomain : squareDomains.y;
-        axisDomainsRef.current = { x: initialXDomain, y: initialYDomain };
-        const colors = GRAPH_COLORS;
-        const buildGraphData = (currentXDomain) => {
-          const data = graph.functions.flatMap((fn, index) => {
-          const color = colors[index % colors.length];
-          if (fn.inverseFunction) {
-            if (fn.inverseFunction === "asec" || fn.inverseFunction === "acsc") {
-              return [[currentXDomain[0], Math.min(currentXDomain[1], -1)], [Math.max(currentXDomain[0], 1), currentXDomain[1]]].flatMap(([left, right]) => {
-                if (right <= left) return [];
-                const count = Math.max(120, Math.min(360, Math.floor(width * 0.5)));
-                const samples = Array.from({ length: count + 1 }, (_, sample) => {
-                  const x = left + (right - left) * sample / count;
-                  return [x, fn.inverseFunction === "asec" ? Math.acos(1 / x) : Math.asin(1 / x)];
-                });
-                return [{ points: samples, fnType: "points", graphType: "polyline", color }];
-              });
-            }
-            const samples = [];
-            const sampleCount = Math.max(180, Math.min(480, Math.floor(width * 0.65)));
-            for (let sample = 0; sample <= sampleCount; sample += 1) {
-              const x = currentXDomain[0] + (currentXDomain[1] - currentXDomain[0]) * sample / sampleCount;
-              if ((fn.inverseFunction === "asin" || fn.inverseFunction === "acos") && (x < -1 || x > 1)) continue;
-              const y = fn.inverseFunction === "asin" ? Math.asin(x)
-                : fn.inverseFunction === "acos" ? Math.acos(x)
-                : fn.inverseFunction === "atan" ? Math.atan(x)
-                  : Math.PI / 2 - Math.atan(x);
-              if (Number.isFinite(y)) samples.push([x, y]);
-            }
-            return samples.length > 1
-              ? [{ points: samples, fnType: "points", graphType: "polyline", color }]
-              : [];
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.round(rect.width * ratio), height = Math.round(rect.height * ratio);
+    canvas.width = width; canvas.height = height;
+    const context = canvas.getContext("2d");
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    const w = rect.width, h = rect.height, view = viewRef.current;
+    const [xmin, xmax] = view.x, [ymin, ymax] = view.y;
+    const sx = (x) => (x - xmin) / (xmax - xmin) * w;
+    const sy = (y) => h - (y - ymin) / (ymax - ymin) * h;
+    context.clearRect(0, 0, w, h); context.fillStyle = "#fff"; context.fillRect(0, 0, w, h);
+    const tickStep = (span, pixels) => { const rough = span / Math.max(2, pixels / 48); const power = 10 ** Math.floor(Math.log10(rough)); const unit = rough / power; return (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * power; };
+    const fmt = (n) => Number(n.toPrecision(4)).toString();
+    const gx = tickStep(xmax - xmin, w), gy = tickStep(ymax - ymin, h);
+    context.lineWidth = 1; context.strokeStyle = "#e8edf3"; context.fillStyle = "#64748b"; context.font = "11px DM Sans, sans-serif";
+    for (let x = Math.ceil(xmin / gx) * gx; x <= xmax; x += gx) { const px = sx(x); context.beginPath(); context.moveTo(px, 0); context.lineTo(px, h); context.stroke(); }
+    for (let y = Math.ceil(ymin / gy) * gy; y <= ymax; y += gy) { const py = sy(y); context.beginPath(); context.moveTo(0, py); context.lineTo(w, py); context.stroke(); }
+    const axisY = ymin <= 0 && ymax >= 0 ? sy(0) : null, axisX = xmin <= 0 && xmax >= 0 ? sx(0) : null;
+    context.strokeStyle = "#334155"; context.lineWidth = 1.35;
+    if (axisY !== null) { context.beginPath(); context.moveTo(0, axisY); context.lineTo(w, axisY); context.stroke(); }
+    if (axisX !== null) { context.beginPath(); context.moveTo(axisX, 0); context.lineTo(axisX, h); context.stroke(); }
+    // Tick labels stay clipped inside the square viewport: x below its axis, y left of its axis.
+    context.fillStyle = "#475569"; context.textBaseline = "top";
+    for (let x = Math.ceil(xmin / gx) * gx; x <= xmax; x += gx) { const px = sx(x); context.textAlign = "center"; context.fillText(fmt(x), Math.max(14, Math.min(w - 14, px)), Math.max(3, Math.min(h - 16, axisY === null ? h - 18 : axisY + 4))); }
+    context.textBaseline = "middle";
+    for (let y = Math.ceil(ymin / gy) * gy; y <= ymax; y += gy) { const py = sy(y); context.textAlign = "right"; context.fillText(fmt(y), Math.max(28, Math.min(w - 4, axisX === null ? 34 : axisX - 5)), Math.max(8, Math.min(h - 8, py))); }
+    const palette = ["#4f46e5", "#0891b2", "#db2777", "#16a34a", "#d97706", "#7c3aed"];
+    expressions.forEach((fn, index) => {
+      const graphColor = fn.color || (fn.fnType === "step" ? "#15803d" : fn.fnType === "fractional" ? "#2563eb" : palette[index % palette.length]);
+      context.strokeStyle = graphColor; context.lineWidth = 2.2; context.lineJoin = "round"; context.lineCap = "round"; context.beginPath();
+      if (fn.fnType === "implicit" || fn.type === "implicit") {
+        const step = 3;
+        const valueAt = (px, py) => { try { return Number(fn.evaluate(xmin + px / w * (xmax - xmin), ymax - py / h * (ymax - ymin), 0)); } catch { return NaN; } };
+        for (let py = 0; py < h; py += step) for (let px = 0; px < w; px += step) {
+          const corners = [[px,py],[px+step,py],[px+step,py+step],[px,py+step]].map(([cx,cy]) => ({ x:cx, y:cy, v:valueAt(cx,cy) }));
+          if (corners.some((point) => !Number.isFinite(point.v))) continue;
+          const crossings = [];
+          for (let edge = 0; edge < 4; edge += 1) {
+            const a = corners[edge], b = corners[(edge + 1) % 4];
+            if ((a.v < 0) === (b.v < 0)) continue;
+            const t = a.v / (a.v - b.v); crossings.push([a.x + t * (b.x-a.x), a.y + t * (b.y-a.y)]);
           }
-          if (["step", "step-ceil", "step-round", "fractional"].includes(fn.fnType)) {
-            const segments = [];
-            const start = fn.fnType === "step-round" ? Math.floor(currentXDomain[0] - 0.5) : Math.floor(currentXDomain[0]);
-            const end = Math.ceil(currentXDomain[1]);
-            for (let value = start; value < end; value += 1) {
-              if (fn.fnType === "step-round") {
-                segments.push({ fn: String(value), range: [Math.max(currentXDomain[0], value - 0.5 + 1e-4), Math.min(currentXDomain[1], value + 0.5 - 1e-4)], color, graphType: "polyline", sampler: "builtIn" });
-              } else if (fn.fnType === "step-ceil") {
-                segments.push({ fn: String(value + 1), range: [Math.max(currentXDomain[0], value + 1e-4), Math.min(currentXDomain[1], value + 1)], color, graphType: "polyline", sampler: "builtIn" });
-              } else if (fn.fnType === "fractional") {
-                segments.push({ fn: "x-(" + value + ")", range: [Math.max(currentXDomain[0], value), Math.min(currentXDomain[1], value + 1 - 1e-4)], color, graphType: "polyline", sampler: "builtIn" });
-              } else {
-                segments.push({ fn: String(value), range: [Math.max(currentXDomain[0], value), Math.min(currentXDomain[1], value + 1 - 1e-4)], color, graphType: "polyline", sampler: "builtIn" });
-              }
-            }
-            return segments.filter((segment) => segment.range[1] > segment.range[0]);
-          }
-          if (fn.fnType === "sign") {
-            const branches = [];
-            if (currentXDomain[0] < 0) branches.push({ fn: "-1", range: [currentXDomain[0], Math.min(currentXDomain[1], -1e-4)], color, graphType: "polyline", sampler: "builtIn" });
-            if (currentXDomain[1] > 0) branches.push({ fn: "1", range: [Math.max(currentXDomain[0], 1e-4), currentXDomain[1]], color, graphType: "polyline", sampler: "builtIn" });
-            if (currentXDomain[0] <= 0 && currentXDomain[1] >= 0) branches.push(
-              { points: [[0, 0]], fnType: "points", graphType: "scatter", color, attr: { class: "graph scatter graph-filled-point", r: 6 } },
-              { points: [[0, 1], [0, -1]], fnType: "points", graphType: "scatter", color, attr: { class: "graph scatter graph-open-point", r: 6 } }
-            );
-            return branches.filter((branch) => !branch.range || branch.range[1] > branch.range[0]);
-          }
-          if (/^tan\s*\(\s*x\s*\)$/i.test(fn.expression.replace(/\s+/g, ""))) {
-            const poles = [];
-            const firstPole = Math.ceil((currentXDomain[0] - Math.PI / 2) / Math.PI);
-            const lastPole = Math.floor((currentXDomain[1] - Math.PI / 2) / Math.PI);
-            for (let k = firstPole; k <= lastPole; k += 1) {
-              const pole = Math.PI / 2 + k * Math.PI;
-              if (pole > currentXDomain[0] && pole < currentXDomain[1]) poles.push(pole);
-            }
-            const bounds = [currentXDomain[0], ...poles, currentXDomain[1]];
-            return bounds.slice(0, -1).map((left, index) => ({
-              fn: fn.expression,
-              range: [left + 0.035, bounds[index + 1] - 0.035],
-              color,
-              graphType: "polyline",
-              sampler: "builtIn"
-            }));
-          }
-          if (/^1\s*\/\s*x(?:\s*\^\s*2)?$/i.test(fn.expression.replace(/\s+/g, "")) && currentXDomain[0] < 0 && currentXDomain[1] > 0) {
-            return [
-              { fn: fn.expression, range: [currentXDomain[0], -1e-3], color, graphType: "polyline", sampler: "builtIn" },
-              { fn: fn.expression, range: [1e-3, currentXDomain[1]], color, graphType: "polyline", sampler: "builtIn" }
-            ];
-          }
-          const reciprocalTrig = fn.expression.replace(/\s+/g, "").toLowerCase().match(/^1\/(tan|sin|cos)\(x\)$/)?.[1];
-          if (reciprocalTrig) {
-            const poles = [];
-            const offset = reciprocalTrig === "cos" ? Math.PI / 2 : 0;
-            const firstPole = Math.ceil((currentXDomain[0] - offset) / Math.PI);
-            const lastPole = Math.floor((currentXDomain[1] - offset) / Math.PI);
-            for (let k = firstPole; k <= lastPole; k += 1) {
-              const pole = reciprocalTrig === "cos" ? Math.PI / 2 + k * Math.PI : k * Math.PI;
-              if (pole > currentXDomain[0] && pole < currentXDomain[1]) poles.push(pole);
-            }
-            const bounds = [currentXDomain[0], ...poles, currentXDomain[1]];
-            return bounds.slice(0, -1).map((left, index) => ({
-              fn: fn.expression,
-              range: [left + 0.035, bounds[index + 1] - 0.035],
-              color,
-              graphType: "polyline",
-              sampler: "builtIn"
-            }));
-          }
-          return [{ fn: fn.expression, fnType: fn.fnType || "linear", graphType: "polyline", sampler: "builtIn", color }];
-          });
-          graph.points.forEach((point) => {
-          const pointClass = point.open ? "graph scatter graph-open-point" : "graph scatter graph-filled-point";
-          data.push({
-            points: [[point.x, point.y]],
-            fnType: "points",
-            graphType: "scatter",
-            color: "#4f46e5",
-            attr: { class: pointClass }
-          });
-          });
-          return data;
-        };
-        const data = buildGraphData(initialXDomain);
-        target.replaceChildren();
-        const chart = plotFn({
-          target,
-          width,
-          height,
-          margin: { left: 62, right: 14, top: 14, bottom: 54 },
-          grid: true,
-          disableZoom: false,
-          tip: {
-            xLine: true,
-            yLine: true,
-            renderer: (x, y) => `x: ${Number(x).toFixed(2)}, y: ${Number(y).toFixed(2)}`
-          },
-          xAxis: { domain: initialXDomain, label: graph.axisLabels.x, ...(trigInputAxis ? { ticks: piTicks(initialXDomain).length, tickValues: piTicks(initialXDomain), tickFormat: formatPiTick } : {}) },
-          yAxis: { domain: initialYDomain, label: graph.axisLabels.y, ...(inverseTrigFunctions ? { ticks: piTicks(initialYDomain).length, tickValues: piTicks(initialYDomain), tickFormat: formatPiTick } : {}) },
-          data
-        });
-        chart?.meta?.xAxis?.ticks?.(Math.max(4, Math.floor(width / 62)));
-        chart?.meta?.yAxis?.ticks?.(Math.max(4, Math.floor(height / 48)));
-        if (trigInputAxis) setRadianTicks(chart?.meta?.xAxis, initialXDomain);
-        if (inverseTrigFunctions) setRadianTicks(chart?.meta?.yAxis, initialYDomain);
-        chart?.build?.();
-        const resegmentOnZoom = graph.functions.some((fn) => Boolean(fn.inverseFunction)
-          || ["step", "step-ceil", "step-round", "fractional", "sign"].includes(fn.fnType)
-          || /^tan\s*\(\s*x\s*\)$/i.test(fn.expression.replace(/\s+/g, ""))
-          || /^1\s*\/\s*(?:x(?:\s*\^\s*2)?|(?:tan|sin|cos)\(x\))$/i.test(fn.expression.replace(/\s+/g, "")));
-        let lastResegmentedDomain = initialXDomain.join(":");
-        const syncZoomedDomains = () => {
-          const nextX = chart?.meta?.xScale?.domain?.();
-          const nextY = chart?.meta?.yScale?.domain?.();
-          if (nextX?.length === 2 && nextY?.length === 2) {
-            axisDomainsRef.current = { x: nextX, y: nextY };
-            if (trigInputAxis) setRadianTicks(chart?.meta?.xAxis, nextX);
-            if (inverseTrigFunctions) setRadianTicks(chart?.meta?.yAxis, nextY);
-            if (trigInputAxis || inverseTrigFunctions) chart?.draw?.();
-            const domainKey = nextX.join(":");
-            if (resegmentOnZoom && domainKey !== lastResegmentedDomain) {
-              lastResegmentedDomain = domainKey;
-              chart.options.data = buildGraphData(nextX);
-              chart.draw();
-            }
-          }
-        };
-        syncZoomedDomains();
-        chart?.on?.("zoom", syncZoomedDomains);
-        if (!target.querySelector("svg") || graph.functions.length && !target.querySelector(".graph path")) {
-          throw new Error("The graph renderer did not create a visible curve.");
+          for (let n = 0; n + 1 < crossings.length; n += 2) { context.moveTo(...crossings[n]); context.lineTo(...crossings[n+1]); }
         }
-        target.querySelectorAll(".x.origin").forEach((axis) => axis.classList.add("origin-x"));
-        target.querySelectorAll(".y.origin").forEach((axis) => axis.classList.add("origin-y"));
-        target.querySelectorAll(".x.axis .tick, .y.axis .tick").forEach((tick) => tick.classList.add("grid"));
-        if (active) setFallback(false);
-      } catch (error) {
-        console.error("Math graph render failed:", error);
-        if (active) setFallback(true);
+        context.stroke(); return;
       }
-    };
-    render();
-    resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => render());
-    resizeObserver?.observe(target);
-    return () => {
-      active = false;
-      resizeObserver?.disconnect();
-      target.replaceChildren();
-    };
-  }, [source, suppliedTitle, hasGraph]);
-  const handlePlotPointerDown = (event) => {
-    const plotArea = event.currentTarget.querySelector(".canvas");
-    if (!plotArea) return;
-    const bounds = plotArea.getBoundingClientRect();
-    if (!bounds.width || !bounds.height || event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
-    const xPosition = (event.clientX - bounds.left) / bounds.width;
-    const yPosition = (event.clientY - bounds.top) / bounds.height;
-    const { x, y } = axisDomainsRef.current;
-    setTapCoordinates({
-      x: x[0] + xPosition * (x[1] - x[0]),
-      y: y[1] - yPosition * (y[1] - y[0])
+      // Render discontinuous integer functions as exact unit segments. Sampling
+      // a discontinuity can otherwise smear endpoints or create false bridges.
+      if (fn.fnType === "step" || fn.fnType === "fractional") {
+        const firstInteger = Math.floor(xmin) - 1;
+        const lastInteger = Math.ceil(xmax) + 1;
+        const intervalCount = Math.max(1, lastInteger - firstInteger + 1);
+        const integerStride = Math.max(1, Math.ceil(intervalCount / Math.max(1, w * 1.5)));
+        context.beginPath();
+        for (let n = firstInteger; n <= lastInteger; n += integerStride) {
+          const x0 = Math.max(xmin, n), x1 = Math.min(xmax, n + 1);
+          if (x1 < x0) continue;
+          const y0 = fn.fnType === "step" ? n : x0 - n;
+          const y1 = fn.fnType === "step" ? n : x1 - n;
+          context.moveTo(sx(x0), sy(y0));
+          context.lineTo(sx(x1), sy(y1));
+        }
+        context.stroke();
+        if (fn.fnType === "fractional" && ymin <= 1 && ymax >= 1) {
+          context.save(); context.strokeStyle = graphColor; context.globalAlpha = 0.52; context.lineWidth = 1.4; context.setLineDash([5, 5]);
+          context.beginPath(); context.moveTo(0, sy(1)); context.lineTo(w, sy(1)); context.stroke(); context.restore();
+        }
+        const drawEndpoint = (x, y, open) => {
+          if (x < xmin || x > xmax || y < ymin || y > ymax) return;
+          context.beginPath(); context.arc(sx(x), sy(y), 4.2, 0, Math.PI * 2);
+          context.fillStyle = open ? "#fff" : graphColor; context.fill(); context.lineWidth = 1.8; context.strokeStyle = graphColor; context.stroke();
+        };
+        for (let n = firstInteger; n <= lastInteger; n += integerStride) {
+          if (fn.fnType === "step") { drawEndpoint(n, n, false); drawEndpoint(n + 1, n, true); }
+          else { drawEndpoint(n, 0, false); drawEndpoint(n + 1, 1, true); }
+        }
+        return;
+      }
+      let drawing = false, lastY = null, lastValue = null;
+      const stepLike = ["step", "step-ceil", "step-round", "sign", "fractional"].includes(fn.fnType);
+      const count = Math.max(500, Math.min(2200, Math.round(w * 2.2)));
+      for (let i = 0; i <= count; i++) {
+        const x = xmin + (xmax - xmin) * i / count;
+        let y;
+        try { y = Number(fn.evaluate(x, 0, x)); } catch { y = NaN; }
+        const py = sy(y);
+        if (!Number.isFinite(y) || !Number.isFinite(py) || py < -h * 3 || py > h * 4 || (lastY !== null && (Math.abs(py - lastY) > h * 0.8 || (stepLike && lastValue !== null && Math.abs(y - lastValue) > 0.45)))) { drawing = false; lastY = null; lastValue = null; continue; }
+        const px = sx(x); if (!drawing) { context.moveTo(px, py); drawing = true; } else context.lineTo(px, py); lastY = py; lastValue = y;
+      }
+      context.stroke();
     });
-  };
-  const equation = graph?.functions?.map((fn) => fn.display || fn.expression).filter(Boolean).join(", ") || graph?.display || expression || "Graph";
-  return fallback
-    ? React.createElement("figure", { className: "math-graph-frame math-graph-fallback", role: "status" }, React.createElement("figcaption", { className: "math-graph-heading" }, "Graph"), React.createElement("p", null, "This graph could not be rendered. Check the equation and try again."))
-    : React.createElement("figure", { className: "math-graph-frame", "aria-label": `Graph of ${graph?.display || expression || "points"}` },
-        React.createElement("div", { className: "math-graph-heading" },
-        React.createElement("strong", null, graph?.title || suppliedTitle || `Graph of ${graph?.display || expression || "points"}`),
-        React.createElement("div", { className: "math-graph-legend" },
-          legendEntries.map((entry, index) => entry.type === "point"
-            ? React.createElement("span", { className: "math-graph-legend-entry", key: `point-${entry.open ? "open" : "filled"}` },
-              React.createElement("span", { className: `math-graph-legend-point ${entry.open ? "is-open" : "is-filled"}`, "aria-hidden": "true" }),
-              React.createElement("span", null, entry.open ? "Excluded point" : "Included point"))
-            : React.createElement("span", { className: "math-graph-legend-entry", key: `${entry.fn.display}-${entry.index}` },
-              React.createElement("span", { className: "math-graph-legend-line", "aria-hidden": "true", style: { backgroundColor: GRAPH_COLORS[entry.index % GRAPH_COLORS.length] } }),
-              React.createElement("span", null, entry.fn.display)))
-        )),
-      React.createElement("div", {
-        ref: targetRef,
-        className: "math-graph-container math-graph-plot function-plot",
-        onPointerDown: handlePlotPointerDown,
-        onPointerMove: handlePlotPointerDown,
-        style: { backgroundColor: "#ffffff", overflow: "visible", color: "black", touchAction: "none" }
-      }),
-      tapCoordinates && React.createElement("div", { className: "math-graph-coordinate", role: "status", "aria-live": "polite" },
-        `x = ${tapCoordinates.x.toFixed(2)}  ·  y = ${tapCoordinates.y.toFixed(2)}`
-      ),
-      graph?.caption && React.createElement("figcaption", null, graph.caption),
-      React.createElement("p", { className: "text-xs text-gray-500 mt-2 text-center" }, `Reference: ${equation}`)
-    );
+    const parametric = points.filter((point) => point?.graphLine);
+    if (parametric.length > 1) { context.beginPath(); context.strokeStyle = parametric[0].color || palette[0]; context.lineWidth = 2.2; context.lineJoin = "round"; parametric.forEach((point,index) => { const px=sx(Number(point.x)),py=sy(Number(point.y)); if(index) context.lineTo(px,py); else context.moveTo(px,py); }); context.stroke(); }
+    points.forEach((raw, index) => { const p = Array.isArray(raw) ? { x: raw[0], y: raw[1] } : raw; if (p?.graphLine || !Number.isFinite(Number(p?.x)) || !Number.isFinite(Number(p?.y))) return; const px = sx(Number(p.x)), py = sy(Number(p.y)); context.beginPath(); context.arc(px, py, 5, 0, Math.PI * 2); context.fillStyle = p.open || p.hollow || p.filled === false ? "#fff" : p.color || palette[index % palette.length]; context.fill(); context.lineWidth = 2; context.strokeStyle = p.color || palette[index % palette.length]; context.stroke(); });
+  }, [expressions, points, revision]);
+  useEffect(() => { const canvas = canvasRef.current; if (!canvas || typeof ResizeObserver === "undefined") return; const observer = new ResizeObserver(() => setRevision((value) => value + 1)); observer.observe(canvas); return () => observer.disconnect(); }, []);
+  const pointerDown = (event) => { event.currentTarget.setPointerCapture(event.pointerId); pointersRef.current.set(event.pointerId, { x:event.clientX, y:event.clientY }); if (pointersRef.current.size >= 2) { const pair = [...pointersRef.current.values()].slice(0,2); pinchRef.current = { distance:Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y), center:{x:(pair[0].x+pair[1].x)/2,y:(pair[0].y+pair[1].y)/2}, domain:{x:[...viewRef.current.x],y:[...viewRef.current.y]} }; dragRef.current = null; } else dragRef.current = { x:event.clientX, y:event.clientY, domain:{x:[...viewRef.current.x],y:[...viewRef.current.y]} }; };
+  const pointerMove = (event) => { if (!pointersRef.current.has(event.pointerId)) return; pointersRef.current.set(event.pointerId,{x:event.clientX,y:event.clientY}); const rect=event.currentTarget.getBoundingClientRect(); if (pointersRef.current.size >= 2 && pinchRef.current) { const pair=[...pointersRef.current.values()].slice(0,2), distance=Math.max(1,Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y)), center={x:(pair[0].x+pair[1].x)/2,y:(pair[0].y+pair[1].y)/2}, base=pinchRef.current, factor=base.distance/distance, px=(center.x-rect.left)/rect.width, py=1-(center.y-rect.top)/rect.height; const zoom=(domain,anchor,fraction)=>{const point=domain[0]+fraction*(domain[1]-domain[0]), span=(domain[1]-domain[0])*factor;return[point-fraction*span,point+(1-fraction)*span];}; viewRef.current={x:zoom(base.domain.x,0,px),y:zoom(base.domain.y,0,py)}; setRevision((value)=>value+1); return; } const drag=dragRef.current; if(!drag)return;const dx=(event.clientX-drag.x)/rect.width*(drag.domain.x[1]-drag.domain.x[0]),dy=(event.clientY-drag.y)/rect.height*(drag.domain.y[1]-drag.domain.y[0]);viewRef.current={x:drag.domain.x.map((v)=>v-dx),y:drag.domain.y.map((v)=>v+dy)};setRevision((value)=>value+1); };
+  const pointerUp = (event) => { pointersRef.current.delete(event.pointerId); pinchRef.current = null; dragRef.current = null; };
+  const wheel = (event) => { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); const factor = Math.exp(Math.max(-1, Math.min(1, event.deltaY * 0.001))); const px = (event.clientX - rect.left) / rect.width, py = 1 - (event.clientY - rect.top) / rect.height; const view = viewRef.current; const zoom = (domain, point, fraction) => { const anchor = domain[0] + point * (domain[1] - domain[0]); const span = (domain[1] - domain[0]) * factor; return [anchor - fraction * span, anchor + (1 - fraction) * span]; }; viewRef.current = { x: zoom(view.x, px, px), y: zoom(view.y, py, py) }; setRevision((value) => value + 1); };
+  const initial = () => { viewRef.current = { x: [...xDomain], y: [...yDomain] }; setRevision((value) => value + 1); };
+  return React.createElement("figure", { className: `${className}-frame`, "aria-label": title || "Interactive graph" }, title && React.createElement("div", { className: "math-graph-heading" }, React.createElement("strong", null, React.createElement(MathText, { children: title }))), React.createElement("canvas", { ref: canvasRef, className: "interactive-graph-canvas", role: "img", "aria-label": title || "Interactive graph", onPointerDown: pointerDown, onPointerMove: pointerMove, onPointerUp: pointerUp, onPointerCancel: pointerUp, onWheel: wheel, onDoubleClick: initial, style: { touchAction: "none" } }), caption && React.createElement("figcaption", { className: "math-graph-caption" }, React.createElement(MathText, { children: caption })));
+}
+function MathGraph({ source, title: suppliedTitle = "" }) {
+  const graph = React.useMemo(() => { try { return parseMathFunction(source); } catch { return null; } }, [source]);
+  if (!graph) return React.createElement("div", { className: "math-graph-error", role: "status" }, "Graph could not be rendered.");
+  let title = suppliedTitle || graph.title || graph.functions.map((fn) => fn.display || `y = ${fn.expression}`).join(", ");
+  if (graph.functions.length === 1) title = (graph.functions[0].display || `y = ${graph.functions[0].expression}`)
+    .replace(/\s*=\s*/g, " = ")
+    .replace(/(?<=[\w)}])\s*\*\s*(?=[\w({])/g, " \\cdot ")
+    .replace(/(?<!\\)\b(sin|cos|tan|ln|log)\b/g, "\\$1");
+  const trig = graph.functions.some((fn) => /\b(?:sin|cos|tan)\s*\(/i.test(fn.expression));
+  const implicit = graph.functions.some((fn) => fn.fnType === "implicit");
+  return React.createElement(CanvasGraph, {
+    title,
+    caption: graph.caption,
+    functions: graph.functions.map((fn) => ({ expression: fn.expression, display: fn.display, fnType: fn.fnType })),
+    points: graph.points.map((point) => ({ ...point, open: point.open })),
+    xDomain: graph.axisDomains.x || (trig ? [-2 * Math.PI, 2 * Math.PI] : implicit ? [-5, 5] : graph.functions.some((fn) => fn.fnType === "fractional") ? [-1.5, 3.9] : graph.functions.some((fn) => fn.fnType === "step") ? [-2.5, 4.5] : [-10, 10]),
+    yDomain: graph.axisDomains.y || (trig ? [-2, 2] : implicit ? [-5, 5] : graph.functions.some((fn) => fn.fnType === "fractional") ? [-0.15, 1.15] : graph.functions.some((fn) => fn.fnType === "step") ? [-2.5, 3.5] : [-10, 10])
+  });
 }
 function safeScientificGraphConfig(parsedConfig = {}) {
   const source = parsedConfig && typeof parsedConfig === "object" && !Array.isArray(parsedConfig) ? parsedConfig : {};
@@ -1088,7 +1014,16 @@ function safeScientificGraphConfig(parsedConfig = {}) {
     }
     return null;
   };
-  const axisConfig = (name) => source[`${name}Axis`] || source.axes?.[name] || {};
+  const axisConfig = (name) => {
+    const axis = source[`${name}Axis`] || source.axes?.[name] || {};
+    if (Object.keys(axis).length) return axis;
+    const legacyDomain = name === "x" ? source.domain : source.range;
+    const labels = source.labels || {};
+    return {
+      label: labels[name] || labels[name === "x" ? "horizontal" : "vertical"] || "",
+      ...(Array.isArray(legacyDomain) ? { domain: legacyDomain } : {})
+    };
+  };
   const safeAxis = (axis) => {
     const sourceAxis = axis && typeof axis === "object" && !Array.isArray(axis) ? axis : {};
     const domain = Array.isArray(sourceAxis.domain) && sourceAxis.domain.length === 2
@@ -1099,13 +1034,17 @@ function safeScientificGraphConfig(parsedConfig = {}) {
         : null;
     return { ...sourceAxis, label: typeof sourceAxis.label === "string" ? sanitizeLatexForDisplay(sourceAxis.label) : "", domain };
   };
-  const data = (Array.isArray(source.data) ? source.data : []).flatMap((rawItem) => {
+  const rawData = Array.isArray(source.data) ? source.data
+    : source.data && typeof source.data === "object" ? [source.data]
+      : [];
+  const data = rawData.flatMap((rawItem) => {
     if (Array.isArray(rawItem)) {
       const point = pointPair(rawItem);
       return point ? [{ points: [point], graphType: source.type === "line" ? "polyline" : "scatter" }] : [];
     }
     if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) return rawItem;
     const item = { ...rawItem };
+    if (typeof item.function === "string" && item.fn === undefined) item.fn = item.function;
     if (Array.isArray(item.x) && Array.isArray(item.y)) {
       const points = item.x.slice(0, 1000).map((x, index) => pointPair([x, item.y[index]])).filter(Boolean);
       const mode = String(item.mode || "").toLowerCase();
@@ -1150,7 +1089,7 @@ function safeScientificGraphConfig(parsedConfig = {}) {
   if (isLineGraph && data.length > 1 && data.every((item) => Array.isArray(item.points) && item.points.length === 1)) {
     data.splice(0, data.length, { points: data.flatMap((item) => item.points), graphType: "polyline" });
   }
-  const hasRaoult = (Array.isArray(source.data) ? source.data : []).some((item) => {
+  const hasRaoult = rawData.some((item) => {
     if (typeof item?.fn !== "string") return false;
     const probe = item.fn.replace(/\\text\s*\{([^{}]+)\}/gi, "$1").replace(/[{}]/g, "");
     return /P[_\s]*total|P[_\s]*A[^=]*x.*P[_\s]*B/i.test(probe);
@@ -1159,7 +1098,8 @@ function safeScientificGraphConfig(parsedConfig = {}) {
   const yAxis = safeAxis(axisConfig("y"));
   return {
     ...source,
-    title: typeof source.title === "string" && source.title.trim() ? sanitizeLatexForDisplay(source.title) : "Scientific Graph",
+    title: typeof source.title === "string" && source.title.trim() ? sanitizeLatexForDisplay(source.title)
+      : typeof source.name === "string" && source.name.trim() ? sanitizeLatexForDisplay(source.name) : "Scientific Graph",
     xAxis: xAxis.domain ? xAxis : { ...xAxis, domain: hasRaoult ? [0, 1] : null },
     yAxis,
     annotations: Array.isArray(source.annotations) ? source.annotations : [],
@@ -1276,243 +1216,62 @@ function looksLikeScientificGraphPayload(rawString) {
   const source = String(rawString || "");
   return /"(?:data|points|polylines|lines)"\s*:/.test(source)
     && (/"type"\s*:\s*"(?:scatter|line|polyline|svg)"/i.test(source)
-      || /"(?:xAxis|yAxis|axes)"\s*:/i.test(source));
+      || /"(?:xAxis|yAxis|axes|domain|range|labels)"\s*:/i.test(source)
+      || /"function"\s*:/i.test(source));
 }
 function ScientificGraph({ config: suppliedConfig = {}, rawString }) {
-  const parseResult = useMemo(() => {
+  const parsed = useMemo(() => {
     if (rawString === undefined) return { config: safeScientificGraphConfig(suppliedConfig), error: "" };
     try { return { config: cleanScientificGraphJson(rawString), error: "" }; }
-    catch {
-      console.log("Scientific graph JSON parse failed. Raw response:", rawString);
-      return { config: {}, error: "⚠️ Error rendering scientific graph. Please ask the AI to regenerate." };
-    }
+    catch { return { config: {}, error: "Graph could not be rendered." }; }
   }, [rawString, rawString === undefined ? suppliedConfig : null]);
-  const config = parseResult.config;
-  const parseError = parseResult.error;
-  const targetRef = useRef(null);
-  const [renderError, setRenderError] = useState("");
-  useEffect(() => {
-    const target = targetRef.current;
-    if (!target || parseError) {
-      target?.replaceChildren();
-      return undefined;
+  const config = parsed.config;
+  if (parsed.error) return React.createElement("div", { className: "math-graph-error", role: "status" }, parsed.error);
+  const functions = [], points = [];
+  (config.data || []).forEach((item, index) => {
+    if (typeof item.fn === "string") {
+      let expression = item.fn;
+      let fnType = item.fnType || item.type;
+      try { const parsedFunction = parseMathFunction(expression); expression = parsedFunction.expression || expression; fnType ||= parsedFunction.fnType; } catch {}
+      functions.push({ expression, fnType, color: item.color || config.colors?.[index] });
     }
-    let active = true;
-    let observer;
-    const render = () => {
-      const plotFn = typeof functionPlot === "function" ? functionPlot : functionPlot.default;
-      const width = Math.max(280, Math.min(720, Math.floor(target.clientWidth || target.getBoundingClientRect().width || 480)));
-      if (!target.clientWidth) return;
-      try {
-        const graphExpressions = (Array.isArray(config.data) ? config.data : []).flatMap((item) => [item?.fn, item?.fn?.x, item?.fn?.y]).filter((value) => typeof value === "string").join(" ").toLowerCase();
-        const cleanAxis = (axis = {}, axisName = "x") => {
-          const isInverse = /(?:asin|acos|atan|acot|asec|acsc|arcsin|arccos|arctan|arccot|arcsec|arccsc)\s*\(/.test(graphExpressions);
-          const isTrig = /(?:sin|cos|tan|cot|sec|csc)\s*\(/.test(graphExpressions);
-          const hasTan = /(?:tan|cot|sec|csc)\s*\(/.test(graphExpressions);
-          const isLog = /(?:log|ln)\s*\(/.test(graphExpressions);
-          const isExp = /exp\s*\(\s*x\s*\)|e\s*\^\s*x/.test(graphExpressions);
-          const coordinateIndex = axisName === "x" ? 0 : 1;
-          const graphPoints = (Array.isArray(config.data) ? config.data : []).flatMap((item) => Array.isArray(item?.points) ? item.points.map((point) => Number(point?.[coordinateIndex])) : []).filter(Number.isFinite);
-          const inverseY = /(?:acos|arccos|acot|arccot|asec|arcsec)\s*\(/.test(graphExpressions) ? [-0.5, Math.PI + 0.5] : [-Math.PI / 2 - 0.5, Math.PI / 2 + 0.5];
-          const domain = Array.isArray(axis.domain) && axis.domain.length === 2 && axis.domain.every(Number.isFinite) && axis.domain[0] !== axis.domain[1]
-            ? axis.domain
-            : graphPoints.length ? (() => { let low = Math.min(...graphPoints), high = Math.max(...graphPoints); if (low === high) { low -= 1; high += 1; } const padding = (high - low) * 0.15; return [low - padding, high + padding]; })()
-              : config.data.some((item) => item?.fnType === "implicit" || item?.fnType === "parametric" || item?.type === "implicit" || item?.type === "parametric") ? [-5, 5]
-                : axisName === "x" ? (isInverse ? /(?:asin|arcsin|acos|arccos)\s*\(/.test(graphExpressions) ? [-1.25, 1.25] : /(?:asec|arcsec|acsc|arccsc)\s*\(/.test(graphExpressions) ? [-6, 6] : [-8, 8] : isTrig ? [-2 * Math.PI, 2 * Math.PI] : isLog ? [-1, 10] : isExp ? [-4, 4] : [-10, 10])
-                  : isInverse ? inverseY : isTrig ? (hasTan ? [-6, 6] : [-2, 2]) : isLog ? [-4, 4] : isExp ? [-1, 12] : [-10, 10];
-          return { domain, ...(typeof axis.label === "string" && axis.label.trim() ? { label: axis.label.trim() } : {}) };
-        };
-        const palette = Array.isArray(config.colors) ? config.colors : [];
-        const xAxis = cleanAxis(config.xAxis, "x");
-        const xDomain = xAxis.domain;
-        const yAxis = cleanAxis(config.yAxis, "y");
-        const yDomain = yAxis.domain;
-        const lines = [];
-        const pointLayers = [];
-        let curveIndex = 0;
-        const addPoints = (values, fallbackColor = "") => {
-          if (!Array.isArray(values)) return;
-          values.forEach((value) => {
-            const point = Array.isArray(value)
-              ? { x: Number(value[0]), y: Number(value[1]) }
-              : value && typeof value === "object"
-                ? { ...value, x: Number(value.x), y: Number(value.y) }
-                : null;
-            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
-            const color = typeof point.color === "string" && point.color.trim()
-              ? point.color.trim()
-              : fallbackColor || GRAPH_COLORS[pointLayers.length % GRAPH_COLORS.length];
-            const open = point.open === true || point.hollow === true || point.filled === false;
-            pointLayers.push({
-              points: [[point.x, point.y]],
-              fnType: "points",
-              graphType: "scatter",
-              color,
-              attr: {
-                class: open ? "graph scatter graph-open-point" : "graph scatter graph-filled-point",
-                fill: open ? "#ffffff" : color,
-                stroke: color,
-                "stroke-width": open ? "2.5" : "1.5"
-              }
-            });
-          });
-        };
-        (Array.isArray(config.data) ? config.data : []).forEach((item) => {
-          if (!item || typeof item !== "object") return;
-          const color = typeof item.color === "string" && item.color.trim()
-            ? item.color.trim()
-            : typeof palette[curveIndex] === "string"
-              ? palette[curveIndex]
-              : GRAPH_COLORS[curveIndex % GRAPH_COLORS.length];
-          if ((item.fnType === "parametric" || item.type === "parametric") && Array.isArray(item.range) && item.range.length === 2) {
-            const pair = typeof item.fn === "object" && item.fn ? item.fn : { x: item.x, y: item.y };
-            if (typeof pair.x === "string" && typeof pair.y === "string") lines.push({ fn: { x: pair.x, y: pair.y }, fnType: "parametric", range: item.range.map(Number), color, graphType: "polyline", sampler: "builtIn" });
-            curveIndex += 1;
-          } else if (typeof item.fn === "string" && item.fn.trim()) {
-            let expression = item.fn.trim();
-            let parsedFunction = null;
-            try { parsedFunction = parseMathFunction(expression); expression = parsedFunction.expression || expression; } catch {}
-            if (item.fnType === "implicit" || parsedFunction?.fnType === "implicit") {
-              lines.push({ fn: expression, fnType: "implicit", color, graphType: "polyline", sampler: "builtIn" });
-              curveIndex += 1;
-            } else {
-            const compact = expression.replace(/\s+/g, "").toLowerCase();
-            const offset = /^tan\(x\)$/.test(compact) || /^1\/(?:cos)\(x\)$/.test(compact) ? Math.PI / 2
-              : /^1\/(?:tan|sin)\(x\)$/.test(compact) ? 0 : null;
-            const reciprocal = /^1\/x(?:\^2)?$/.test(compact);
-            const low = Array.isArray(item.range) && item.range.length === 2 && item.range.every(Number.isFinite) ? Math.max(xDomain[0], item.range[0]) : xDomain[0];
-            const high = Array.isArray(item.range) && item.range.length === 2 && item.range.every(Number.isFinite) ? Math.min(xDomain[1], item.range[1]) : xDomain[1];
-            let poles = [];
-            if (reciprocal && low < 0 && high > 0) poles = [0];
-            else if (offset !== null) {
-              const first = Math.ceil((low - offset) / Math.PI);
-              const last = Math.floor((high - offset) / Math.PI);
-              for (let k = first; k <= last; k += 1) {
-                const pole = offset + k * Math.PI;
-                if (pole > low && pole < high) poles.push(pole);
-              }
-            }
-            if (poles.length && high > low) {
-              const bounds = [low, ...poles, high];
-              const epsilon = Math.min(0.035, (high - low) / 1000);
-              bounds.slice(0, -1).forEach((start, segmentIndex) => lines.push({
-                fn: expression,
-                range: [start + (segmentIndex ? epsilon : 0), bounds[segmentIndex + 1] - (segmentIndex < bounds.length - 2 ? epsilon : 0)],
-                color,
-                graphType: "polyline",
-                sampler: "builtIn"
-              }));
-            } else {
-              const datum = { fn: expression, color, graphType: "polyline", sampler: "builtIn" };
-              if (Array.isArray(item.range) && item.range.length === 2 && item.range.every(Number.isFinite) && item.range[0] < item.range[1]) datum.range = item.range;
-              if (item.closed === true) datum.closed = true;
-              lines.push(datum);
-            }
-            curveIndex += 1;
-            }
-          }
-          if (Array.isArray(item.points)) {
-            if (item.graphType === "polyline" || item.type === "polyline" || item.closed === true) {
-              const points = item.points.slice(0, 1000).filter((point) => Array.isArray(point) && point.length >= 2 && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]))).map((point) => [Number(point[0]), Number(point[1])]);
-              if (points.length > 1) lines.push({ points, fnType: "points", graphType: "polyline", color, ...(item.closed ? { closed: true } : {}) });
-            } else addPoints(item.points, color);
-          }
-          if (item.type === "point" || (Number.isFinite(Number(item.x)) && Number.isFinite(Number(item.y)))) {
-            addPoints([item], color);
-          }
-        });
-        addPoints(config.points);
-        const scientificTrigInput = config.data.some((item) => typeof item?.fn === "string" && /\b(?:sin|cos|tan|cot|sec|csc)\s*\(/i.test(item.fn));
-        const scientificInverseOutput = config.data.some((item) => typeof item?.fn === "string" && /\b(?:asin|acos|atan|acot|arcsin|arccos|arctan)\s*\(/i.test(item.fn));
-        const annotations = Array.isArray(config.annotations) ? config.annotations : [];
-        const axisAnnotations = [];
-        const textAnnotations = [];
-        annotations.forEach((annotation) => {
-          if (!annotation || typeof annotation !== "object") return;
-          const hasX = Number.isFinite(annotation.x);
-          const hasY = Number.isFinite(annotation.y);
-          if (hasX && hasY && typeof annotation.text === "string" && annotation.text.trim()) {
-            textAnnotations.push({
-              graphType: "text",
-              location: [annotation.x, annotation.y],
-              text: annotation.text.trim(),
-              color: typeof annotation.color === "string" ? annotation.color : "#334155",
-              attr: { "font-size": "12px", "font-weight": "600" }
-            });
-          } else if (hasX !== hasY) {
-            axisAnnotations.push({ ...(hasX ? { x: annotation.x } : { y: annotation.y }), ...(typeof annotation.text === "string" && annotation.text.trim() ? { text: annotation.text.trim() } : {}) });
-          }
-        });
-        target.replaceChildren();
-        const chart = plotFn({
-          target,
-          width,
-          height: 350,
-          margin: { left: 68, right: 18, top: 24, bottom: 58 },
-          grid: true,
-          disableZoom: false,
-          tip: {
-            xLine: true,
-            yLine: true,
-            renderer: (x, y) => `x: ${Number(x).toFixed(3)}, y: ${Number(y).toFixed(3)}`
-          },
-          xAxis: { ...xAxis, label: String(config.xAxis?.label || "x").slice(0, 60), ...(scientificTrigInput ? { ticks: piTicks(xDomain).length, tickValues: piTicks(xDomain), tickFormat: formatPiTick } : {}) },
-          yAxis: { ...yAxis, label: String(config.yAxis?.label || "y").slice(0, 60), ...(scientificInverseOutput ? { ticks: piTicks(yDomain).length, tickValues: piTicks(yDomain), tickFormat: formatPiTick } : {}) },
-          annotations: axisAnnotations,
-          data: [...lines, ...pointLayers, ...textAnnotations]
-        });
-        if (scientificTrigInput) setRadianTicks(chart?.meta?.xAxis, xDomain);
-        if (scientificInverseOutput) setRadianTicks(chart?.meta?.yAxis, yDomain);
-        chart?.build?.();
-        if (!target.querySelector(".graph path, .graph circle, .graph .scatter")) throw new Error("The scientific graph contains no visible data.");
-        chart?.on?.("zoom", () => {
-          const activeX = chart?.meta?.xScale?.domain?.();
-          const activeY = chart?.meta?.yScale?.domain?.();
-          if (scientificTrigInput && activeX?.length === 2) setRadianTicks(chart?.meta?.xAxis, activeX);
-          if (scientificInverseOutput && activeY?.length === 2) setRadianTicks(chart?.meta?.yAxis, activeY);
-          if (scientificTrigInput && activeX?.length === 2) {
-            const trigRows = config.data.filter((item) => typeof item?.fn === "string" && /\b(?:sin|cos|tan|cot|sec|csc)\s*\(/i.test(item.fn));
-            const expressions = new Set(trigRows.map((item) => { try { return parseMathFunction(item.fn).expression; } catch { return item.fn.trim(); } }));
-            const retained = lines.filter((line) => !expressions.has(line.fn));
-            const regenerated = trigRows.flatMap((item, index) => {
-              let equation = item.fn.trim();
-              try { equation = parseMathFunction(equation).expression || equation; } catch {}
-              const compact = equation.replace(/\s+/g, "").toLowerCase();
-              const offset = /^tan\(x\)$/.test(compact) || /^1\/cos\(x\)$/.test(compact) ? Math.PI / 2 : /^1\/(?:tan|sin)\(x\)$/.test(compact) ? 0 : null;
-              const low = Array.isArray(item.range) && item.range.length === 2 ? Math.max(activeX[0], Number(item.range[0])) : activeX[0];
-              const high = Array.isArray(item.range) && item.range.length === 2 ? Math.min(activeX[1], Number(item.range[1])) : activeX[1];
-              const color = typeof item.color === "string" ? item.color : typeof palette[index] === "string" ? palette[index] : GRAPH_COLORS[index % GRAPH_COLORS.length];
-              if (offset === null || high <= low) return [{ fn: equation, color, graphType: "polyline", sampler: "builtIn", ...(item.range ? { range: item.range } : {}) }];
-              const poles = [];
-              for (let k = Math.ceil((low - offset) / Math.PI); k <= Math.floor((high - offset) / Math.PI); k += 1) { const pole = offset + k * Math.PI; if (pole > low && pole < high) poles.push(pole); }
-              const bounds = [low, ...poles, high];
-              const epsilon = Math.min(0.035, (high - low) / 1000);
-              return bounds.slice(0, -1).map((left, segment) => ({ fn: equation, range: [left + (segment ? epsilon : 0), bounds[segment + 1] - (segment < bounds.length - 2 ? epsilon : 0)], color, graphType: "polyline", sampler: "builtIn" }));
-            });
-            chart.options.data = [...retained, ...regenerated, ...pointLayers, ...textAnnotations];
-          }
-          if (scientificTrigInput || scientificInverseOutput) chart?.draw?.();
-        });
-        target.querySelectorAll("text").forEach((text) => { text.style.fill = "#111827"; });
-        setRenderError("");
-      } catch (cause) {
-        console.error("Scientific graph render failed:", cause);
-        target.replaceChildren();
-        if (active) setRenderError("Graph could not be rendered. Please check the formula and try again.");
+    else if ((item.fnType === "parametric" || item.type === "parametric") && item.fn && typeof item.fn.x === "string" && typeof item.fn.y === "string") {
+      const range = Array.isArray(item.range) && item.range.length === 2 ? item.range.map(Number) : [0, 2 * Math.PI];
+      const compile = (source) => {
+        let expression = source.replace(/\bpi\b/gi, "Math.PI").replace(/\be\b/g, "Math.E").replace(/\^/g, "**");
+        expression = expression.replace(/\b(sin|cos|tan|sqrt|abs|exp|log|floor|ceil|round|min|max)\s*\(/gi, "Math.$1(");
+        if (!/^[\w+\-*/^().,\s]*$/.test(source)) return null;
+        try { return new Function("t", `"use strict"; return (${expression});`); } catch { return null; }
+      };
+      const fx = compile(item.fn.x), fy = compile(item.fn.y);
+      if (fx && fy && range.every(Number.isFinite) && range[1] > range[0]) {
+        const curve = [];
+        for (let i = 0; i <= 900; i += 1) { const t = range[0] + (range[1] - range[0]) * i / 900; try { const x = Number(fx(t)), y = Number(fy(t)); if (Number.isFinite(x) && Number.isFinite(y)) curve.push([x,y]); } catch {} }
+        if (curve.length > 1) points.push(...curve.map(([x,y]) => ({x,y,color:item.color || config.colors?.[index], graphLine:true})));
       }
-    };
-    render();
-    observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(render);
-    observer?.observe(target);
-    return () => { active = false; observer?.disconnect(); target.replaceChildren(); };
-  }, [config, parseError]);
-  const error = parseError || renderError;
-  return React.createElement("figure", { className: "scientific-graph-frame" },
-    typeof config.title === "string" && config.title.trim() && React.createElement("figcaption", { className: "scientific-graph-title" }, config.title.trim()),
-    !parseError && React.createElement("div", { className: "bg-white rounded-xl p-4 shadow-sm text-black" }, React.createElement("div", { ref: targetRef, className: "scientific-graph-plot function-plot", role: "img", "aria-label": typeof config.title === "string" ? config.title : "Scientific graph" })),
-    error && React.createElement("div", { className: "scientific-graph-error", role: "alert" }, error),
-    React.createElement("p", { className: "text-xs text-gray-500 mt-2 text-center" }, `Reference: ${config.title || "Scientific graph"}`)
-  );
+    }
+    else if (Array.isArray(item.points)) item.points.forEach((point) => {
+      const graphLine = ["polyline", "line"].includes(String(item.graphType || item.mode || "").toLowerCase());
+      if (Array.isArray(point)) points.push({ x: Number(point[0]), y: Number(point[1]), color: item.color, graphLine });
+      else if (point && typeof point === "object") points.push({ ...point, color: point.color || item.color, graphLine: point.graphLine || graphLine });
+    });
+  });
+  (config.points || []).forEach((point) => points.push(point));
+  const infer = (axis, coordinate) => {
+    if (axis?.domain) return axis.domain;
+    const values = points.map((point) => Number(point[coordinate])).filter(Number.isFinite);
+    if (!values.length) {
+      if (functions.some((fn) => fn.fnType === "implicit")) return [-5, 5];
+      if (functions.some((fn) => /\b(?:sin|cos|tan)\s*\(/i.test(fn.expression))) return [-2 * Math.PI, 2 * Math.PI];
+      return [-10, 10];
+    }
+    let low = Math.min(...values), high = Math.max(...values); if (low === high) { low -= 1; high += 1; }
+    const pad = (high - low) * 0.12; return [low - pad, high + pad];
+  };
+  let title = config.title && config.title !== "Scientific Graph" ? config.title : functions.map((fn) => `y = ${fn.expression}`).join(", ");
+  if (functions.length === 1 && !String(title).includes("=")) title = `y = ${functions[0].expression}`;
+  if (functions.length === 1) title = String(title).replace(/(?<!\\)\b(sin|cos|tan|ln|log)\b/g, "\\$1");
+  return React.createElement(CanvasGraph, { title, functions, points, xDomain: infer(config.xAxis, "x"), yDomain: infer(config.yAxis, "y"), className: "scientific-graph" });
 }
 function SmilesRenderer({ smiles }) {
   const [svg, setSvg] = useState("");
@@ -1542,8 +1301,7 @@ function MermaidDiagram({ source }) {
     const id = `apex-mermaid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const diagram = normalizeLegacyXYChart(source);
     setResult({ svg: "", error: false });
-    Promise.resolve().then(() => import("mermaid")).then(async (module) => {
-      const mermaid = module.default || module;
+    Promise.resolve().then(async () => {
       mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
       try {
         return await mermaid.render(id, diagram);
@@ -1596,16 +1354,79 @@ function normalizeAssistantMarkdownHeadings(value) {
   return String(value ?? "").split(protectedMarkdown).map((part, index) => {
     if (index % 2) return part;
     return part
+      .replace(/^\s*#{1,6}\s*$/gm, "")
       .replace(/([^\n])\s+(#{1,6})\s*(?=\S)/g, "$1\n\n$2 ")
       .replace(/(^|\n)[ \t]*(#{1,6})[ \t]*(?=\S)/gm, "$1\n\n$2 ")
       .replace(/^(#{1,6} [^\n]+)$/gm, "$1\n\n");
+  }).join("");
+}
+function repairUnmarkedMathNotation(value) {
+  const protectedPattern = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
+  return String(value || "").split(protectedPattern).map((part, index) => {
+    if (index % 2) return part;
+    let output = part.replace(/\\{2,}(?=(?:left|right|lfloor|rfloor|lceil|rceil)\b)/g, "\\");
+    output = output
+      .replace(/\\(?:left\s*\\)?lfloor\s*([^\\\n$]+?)\s*\\(?:right\s*\\)?rfloor/g, (_match, body) => `$\\left\\lfloor ${body.trim()}\\right\\rfloor$`)
+      .replace(/\\(?:left\s*\\)?lceil\s*([^\\\n$]+?)\s*\\(?:right\s*\\)?rceil/g, (_match, body) => `$\\left\\lceil ${body.trim()}\\right\\rceil$`);
+    // Keep common powers as math even when a model leaves them unmarked in a
+    // heading or sentence. Code, existing formulas, and inline code are held
+    // out by the protected split above.
+    output = output.replace(/\b([A-Za-z])\s*\^\s*(\{\s*[+-]?\d+\s*\}|[+-]?\d+)(?![A-Za-z0-9])/g, (_match, variable, exponent) => `$${variable}^{${exponent.replace(/[{}\s]/g, "")}}$`);
+    return output;
+  }).join("");
+}
+function normalizeInlineMathDelimiters(value) {
+  const tick = String.fromCharCode(96);
+  const protectedPattern = new RegExp(`(${tick}{3}[\\s\\S]*?(?:${tick}{3}|$)|${tick}[^${tick}\\n]*${tick})`, "g");
+  const balance = (formula) => {
+    let output = "", round = 0, square = 0, curly = 0;
+    for (let i = 0; i < formula.length; i += 1) {
+      const ch = formula[i];
+      let slashes = 0; for (let j = i - 1; j >= 0 && formula[j] === "\\\\"; j -= 1) slashes += 1;
+      if (slashes % 2) { output += ch; continue; }
+      if (ch === "(") round += 1;
+      else if (ch === ")") { if (!round) continue; round -= 1; }
+      else if (ch === "[") square += 1;
+      else if (ch === "]") { if (!square) continue; square -= 1; }
+      else if (ch === "{") curly += 1;
+      else if (ch === "}") { if (!curly) continue; curly -= 1; }
+      output += ch;
+    }
+    return output + ")".repeat(round) + "]".repeat(square) + "}".repeat(curly);
+  };
+  return String(value || "").split(protectedPattern).map((block, index) => {
+    if (index % 2) return block;
+    block = block.split("\n").map((line) => {
+      const first = line.indexOf("$$");
+      if (first < 0) return line;
+      const tokens = line.match(/\$\$/g) || [];
+      const last = line.lastIndexOf("$$");
+      const midSentence = Boolean(line.slice(0, first).trim() || line.slice(last + 2).trim());
+      if (!midSentence && tokens.length % 2 === 0) return line;
+      let repaired = line.replace(/\$\$/g, "$");
+      const dollars = (repaired.match(/(?<!\\)\$/g) || []).length;
+      if (dollars % 2) repaired += "$";
+      return repaired;
+    }).join("\n");
+    return block
+      .replace(/\$\$([^$\n]+)\$\$(?=\s+\S)/g, (whole, formula, offset, source) => /\S/.test(source.slice(0, offset).split("\n").pop() || "") ? `$${formula}$` : whole)
+      .replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g, (math) => {
+        const display = math.startsWith("$$");
+        const body = math.slice(display ? 2 : 1, display ? -2 : -1);
+        const repaired = balance(body)
+          .replace(/\\(sin|cos|tan|ln|log|lim|exp)(?=[A-Za-z])/g, "\\$1 ")
+          .replace(/\b(sin|cos|tan|ln|log)(?=x\b)/gi, "\\$1 x");
+        return display ? `$$${repaired}$$` : `$${repaired}$`;
+      })
+      .replace(/([A-Za-z0-9])(\$[^$\n]+\$)/g, "$1 $2")
+      .replace(/(\$[^$\n]+\$)([A-Za-z0-9])/g, "$1 $2");
   }).join("");
 }
 function MathText({ children, className = "", legacy = false, components = {} }) {
   // Run every content source through the same delimiter and Markdown repair
   // first. This repairs stray `$$` markers, escaped math, and compacted
   // headings before the rendering pass; it preserves TeX commands for KaTeX.
-  const text = normalizeAssistantMarkdownHeadings(sanitizeLatexOutput(String(children ?? "")));
+  const text = normalizeInlineMathDelimiters(normalizeAssistantMarkdownHeadings(sanitizeLatexOutput(repairUnmarkedMathNotation(String(children ?? "")))));
   const stripMathComments = (value) => String(value || "").replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g, (math) => math.replace(/%/g, ""));
   let source;
   try {
@@ -1616,7 +1437,7 @@ function MathText({ children, className = "", legacy = false, components = {} })
     // math and code untouched. This also handles prose that contains a
     // wrapped formula plus an unwrapped root or fraction nearby.
     const proseAware = normalized.split(/(\x60{3}[\s\S]*?(?:\x60{3}|$)|~~~[\s\S]*?(?:~~~|$)|\x60[^\x60\n]*\x60|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g)
-      .map((part, index) => index % 2 ? part : normalizeAssistantMarkup(part))
+      .map((part, index) => index % 2 ? repairMalformedLatex(part) : normalizeAssistantMarkup(part))
       .join("");
     // Keep ordinary function parentheses at their authored size. Only promote
     // genuinely long equations to a display line, where fractions can breathe.
@@ -1632,15 +1453,51 @@ function MathText({ children, className = "", legacy = false, components = {} })
     // Preserve prose verbatim if an optional normalization step fails.
     source = String(text ?? "");
   }
+  // Preflight the exact Markdown that will reach remark-math. Any TeX left in
+  // prose gets one final normalization pass before the first render.
+  if (containsUnrenderedLatex(source)) {
+    const repaired = normalizeAssistantMarkup(repairMalformedLatex(source));
+    if (repaired !== source) source = repaired;
+  }
+  const [recoveredSource, setRecoveredSource] = useState({ original: null, value: null });
+  const renderedSource = recoveredSource.original === source ? recoveredSource.value : source;
+  const recoveryAttemptsRef = useRef({ source: null, count: 0 });
   const renderRootRef = useRef(null);
   useLayoutEffect(() => {
     const root = renderRootRef.current;
     if (!root) return void 0;
+    if (recoveryAttemptsRef.current.source !== source) recoveryAttemptsRef.current = { source, count: 0 };
+    // Verify the DOM after KaTeX has run. Raw TeX outside a `.katex` node, or
+    // a KaTeX parse error, gets one more pass through the shared repairer.
+    const hasUnrenderedLatex = () => {
+      if (root.querySelector(".katex-error")) return true;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let textNode;
+      while ((textNode = walker.nextNode())) {
+        const parent = textNode.parentElement;
+        if (!parent || parent.closest(".katex, code, pre, script, style")) continue;
+        if (containsUnrenderedLatex(textNode.nodeValue || "")) return true;
+      }
+      return false;
+    };
+    if (hasUnrenderedLatex() && recoveryAttemptsRef.current.count < 2) {
+      recoveryAttemptsRef.current.count += 1;
+      const repaired = normalizeAssistantMarkup(repairMalformedLatex(renderedSource));
+      if (repaired !== renderedSource) setRecoveredSource({ original: source, value: repaired });
+    }
     const observed = new WeakSet();
     const measure = () => {
-      root.querySelectorAll(".katex-display, .katex").forEach((node) => {
-        const overflowing = node.clientWidth > 0 && node.scrollWidth > node.clientWidth + 2;
-        node.dataset.overflowing = String(overflowing);
+      root.querySelectorAll(".katex-display").forEach((node) => {
+        const formula = node.querySelector(":scope > .katex");
+        const available = node.clientWidth;
+        if (!formula || !available) return;
+        formula.style.removeProperty("--math-fit-scale");
+        const naturalWidth = Math.max(formula.scrollWidth, formula.getBoundingClientRect().width);
+        const scale = naturalWidth > available ? (available - 4) / naturalWidth : 1;
+        const canFit = scale >= 0.68;
+        node.dataset.fitted = String(canFit && scale < 0.98);
+        node.dataset.overflowing = String(!canFit && naturalWidth > available + 2);
+        if (canFit && scale < 0.98) formula.style.setProperty("--math-fit-scale", String(scale));
       });
     };
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
@@ -1667,7 +1524,7 @@ function MathText({ children, className = "", legacy = false, components = {} })
       mutationObserver?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [source]);
+  }, [source, renderedSource]);
   const markdown = React.createElement(ReactMarkdown, {
     remarkPlugins: [remarkMath, remarkGfm],
     remarkRehypeOptions: { allowDangerousHtml: true },
@@ -1692,7 +1549,7 @@ function MathText({ children, className = "", legacy = false, components = {} })
         if (svgSource) return React.createElement(InlineSvgDiagram, { source: svgSource });
         const hasVisualBlock = React.Children.toArray(props.children).some((child) => {
           const classes = child?.props?.className?.split(/\s+/) || [];
-          return classes.includes("language-mermaid") || classes.includes("language-math-graph") || classes.includes("language-plot") || classes.includes("language-scientific-plot");
+          return classes.includes("language-mermaid") || classes.includes("language-math-graph") || classes.includes("language-plot") || classes.includes("language-scientific-plot") || classes.includes("language-plot-data");
         });
         const visualComponent = React.Children.toArray(props.children).some((child) => child?.type === InlineSvgDiagram || child?.type === MathGraph || child?.type === ScientificGraph || child?.type === MermaidDiagram || child?.props?.className?.includes("assistant-latex-rendered"));
         if (hasVisualBlock || visualComponent) return React.createElement(React.Fragment, null, props.children);
@@ -1706,7 +1563,7 @@ function MathText({ children, className = "", legacy = false, components = {} })
         const graphJson = /(?:^|\s)language-(?:json|scientific-plot)(?:\s|$)/i.test(className)
           ? isScientificGraphJson(codeSource) || looksLikeScientificGraphPayload(codeSource)
           : !className && isScientificGraphJson(codeSource);
-        if (className.split(/\s+/).includes("language-scientific-plot") || graphJson) {
+        if (className.split(/\s+/).some((name) => ["language-scientific-plot", "language-plot-data"].includes(name)) || graphJson) {
           return React.createElement(ScientificGraph, { rawString: codeSource });
         }
         const mermaidFence = /(?:^|\s)language-(?:mermaid|flowchart|diagram)(?:\s|$)/i.test(className);
@@ -1749,10 +1606,10 @@ function MathText({ children, className = "", legacy = false, components = {} })
         return React.createElement("code", { ...props, className: `assistant-markdown-code ${className}`.trim() }, props.children);
       }
     },
-    children: source
+    children: renderedSource
   });
   return React.createElement("div", { ref: renderRootRef, className: `math-render-root ${className}`.trim() },
-    React.createElement(MarkdownRenderBoundary, { key: source, source }, markdown));
+    React.createElement(MarkdownRenderBoundary, { key: renderedSource, source: renderedSource }, markdown));
 }
 
 const MemoizedMathText = React.memo(MathText);
@@ -1760,6 +1617,7 @@ export {
   MemoizedMathText as default,
   MemoizedMathText as MathText,
   MathGraph,
+  CanvasGraph,
   ScientificGraph,
   SmilesRenderer,
   normalizeAssistantMarkup,

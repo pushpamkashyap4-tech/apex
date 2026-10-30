@@ -15,7 +15,7 @@ export const STUDY_FIGURES = [
   { id: "maths-parabola", subject: "Mathematics", title: "Parabola diagram", src: "/assets/images/math_parabola.png.jpg", keywords: ["parabola", "focus directrix parabola"] },
   { id: "maths-ellipse", subject: "Mathematics", title: "Ellipse diagram", src: "/assets/images/math_ellipse.png.jpg", keywords: ["ellipse", "foci of ellipse", "ellipse axes"] },
   { id: "maths-hyperbola", subject: "Mathematics", title: "Hyperbola diagram", src: "/assets/images/math_hyperbola.png.jpg", keywords: ["hyperbola", "asymptotes hyperbola"] },
-  { id: "maths-circle", subject: "Mathematics", title: "Circle diagram", src: "/assets/images/math_circle.png.jpg", keywords: ["circle geometry", "circle diagram", "equation of circle"] },
+  { id: "maths-circle", subject: "Mathematics", title: "Circle diagram", src: "/assets/images/math_circle.png.jpg", keywords: ["circle", "circle geometry", "circle diagram", "equation of circle"] },
   { id: "maths-functions", subject: "Mathematics", title: "Function representations", src: "/assets/images/math_functions_representation.png.jpg", keywords: ["function mapping", "function representations", "domain codomain range"] },
   { id: "physics-free-body", subject: "Physics", title: "Free body diagram", src: "/assets/images/phys_fbd.png.jpg", keywords: ["free body diagram", "fbd", "force diagram", "forces on a body"] },
   { id: "physics-ray-diagrams", subject: "Physics", title: "Optics ray diagrams", src: "/assets/images/phys_optics_ray_diagrams.png.jpg", keywords: ["ray diagram", "optics diagram", "lens ray", "mirror ray"] },

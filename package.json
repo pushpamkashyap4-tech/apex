@@ -12,10 +12,11 @@
     "dev:vite": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "audit:recall": "node scripts/audit-recall-json.mjs"
+    "audit:recall": "node scripts/audit-recall-json.mjs",
+    "audit:math": "node scripts/audit-math-rendering.mjs"
   },
   "dependencies": {
-    "function-plot": "1.25.4",
+    "function-plot": "^1.26.0",
     "katex": "0.18.2",
     "lucide-react": "0.468.0",
     "mermaid": "11.17.2",

@@ -241,6 +241,77 @@ function repairEscapedMathDelimiters(value) {
   return String(value || "").split(fencePattern).map((part) => /^(```|~~~)/.test(part) ? part : repairText(part)).join("");
 }
 
+function repairRepeatedMathDelimiters(value) {
+  const fencePattern = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$))/g;
+  return String(value ?? "").split(fencePattern).map((chunk) => {
+    if (/^(?:```|~~~)/.test(chunk)) return chunk;
+    // A frequent model typo closes inline math with three or more dollars:
+    // `$\frac{a}{b}$$$ text`. Preserve the inline pair and discard only the
+    // extra markers. Do this before the general delimiter cleanup, which
+    // cannot tell a malformed inline closer from a display delimiter.
+    let repaired = chunk.replace(/(?<!\\)(?<!\$)\$([^$\n]{1,1200}?)\${3,}(?=\s*(?:[A-Za-z(\\]|[,.;:!?)]|$))/g,
+      (_whole, formula) => `$${formula.trim()}$`);
+    // Repair mixed pairs such as `\\(x^2 $$$ and` and `\\(\\int ...?$`.
+    // These are common in generated recall content where one delimiter style
+    // was started and another was used to close the formula.
+    repaired = repaired.replace(/\\+\(([^$\n]{1,1200}?)\${2,}(?=\s*(?:[A-Za-z(\\]|[,.;:!?)]|$))/g,
+      (_whole, formula) => `$${formula.trim()}$`);
+    repaired = repaired.replace(/\\+\(([^$\n]{1,1200}?)\$(?=\s*(?:[,.;:!?)]|$))/g,
+      (_whole, formula) => `$${formula.trim()}$`);
+    // When the opening marker is missing, repeated dollars often appear just
+    // after an unwrapped fraction or beside its equals sign. Remove those
+    // stray markers so the normal bare-TeX wrapper can recover the equation.
+    repaired = repaired
+      .replace(/(?<=[\w}\])])\${3,}(?=\s*(?:=|[A-Za-z]))/g, " ")
+      .replace(/(?<==)\s*\${3,}\s*(?=\\[A-Za-z])/g, " ");
+    // The display equivalent can also be followed directly by prose.
+    repaired = repaired.replace(/(?<!\\)\$\$([\s\S]{1,2400}?)\$\$\$+(?=\s*(?:[A-Za-z(\\]|[,.;:!?)]|$))/g,
+      (_whole, formula) => `$$\n${formula.trim()}\n$$`);
+    // JSON/model output sometimes escapes the parentheses used as math
+    // delimiters, or mixes them with dollar markers. Restore complete pairs
+    // while leaving ordinary escaped parentheses alone unless their contents
+    // are unmistakably mathematical.
+    repaired = repaired.replace(/\\+\(([^\n]*?)\\+\)/g, (whole, formula) => {
+      const body = formula.trim();
+      return /\\[A-Za-z]+|[=<>_^{}]|\b(?:sin|cos|tan|log|ln|lim|int)\b/.test(body) ? `$${body}$` : whole;
+    });
+    return repaired;
+  }).join("");
+}
+
+function repairProseInsideInlineMath(value) {
+  const fencePattern = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$))/g;
+  const inlineMath = /(?<!\\)(?<!\$)\$([^$\n]{1,1800})\$(?!\$)/g;
+  const proseBoundary = /\s+\\?\s*(and|where|if|when|otherwise|as|approaches|from|because|since|therefore|then|while|which|that|for|with|is|are)\b/i;
+  return String(value ?? "").split(fencePattern).map((chunk) => {
+    if (/^(?:```|~~~)/.test(chunk)) return chunk;
+    return chunk.replace(inlineMath, (whole, body) => {
+      if (!/\\[A-Za-z]+|[=<>_^{}]/.test(body)) return whole;
+      const boundary = proseBoundary.exec(body);
+      if (!boundary) return whole;
+      const splitAt = boundary.index;
+      const left = body.slice(0, splitAt).replace(/[\\\s,;:]+$/, "").trim();
+      let right = body.slice(splitAt).trim().replace(/^\\?\s*/, "");
+      if (!left || !/\\[A-Za-z]+|[=<>_^{}]/.test(left)) return whole;
+      const word = boundary[1].toLowerCase();
+      if (word === "and") {
+        right = body.slice(splitAt).trim()
+          .replace(/^\\?\s*/, "")
+          .replace(/^and\b\s*/i, "")
+          .replace(/^\\+\(/, "")
+          .replace(/\\+\)\s*$/, "")
+          .trim();
+        const punctuation = right.match(/[?.!,;:]+$/)?.[0] || "";
+        right = right.slice(0, right.length - punctuation.length).trim();
+        return right && /\\[A-Za-z]+|[=<>_^{}]/.test(right)
+          ? `$${left}$ and $${right}$${punctuation}`
+          : `$${left}$ and ${right}${punctuation}`;
+      }
+      return `$${left}$ ${right}`;
+    });
+  }).join("");
+}
+
 export function normalizeAssistantMathInput(value) {
   let source = String(value ?? "")
     .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u00AD]/g, "")
@@ -265,7 +336,7 @@ export function sanitizeLatexOutput(text) {
   if (!text) return "";
   // Strip invisible characters that can split commands or confuse Markdown's
   // delimiter matching. Keep ordinary Unicode math symbols and line breaks.
-  let clean = String(text)
+  let clean = repairRepeatedMathDelimiters(String(text))
     .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u00AD]/g, "")
     .replace(/[\u00A0\u202F]/g, " ")
     .replace(/\r\n?/g, "\n");
@@ -280,6 +351,24 @@ export function sanitizeLatexOutput(text) {
     codeChunks.push({ token, value: block });
     return token;
   });
+  // Some assistant replies accidentally put an equation in inline-code
+  // backticks, which makes Markdown show the dollar signs literally. Restore
+  // only code spans made entirely of math-like characters, leaving real code
+  // examples untouched.
+  clean = clean.replace(/`([^`\n]*\$[^`\n]*\$[^`\n]*)`/g, (whole, body) =>
+    /^[\s$\\{}()\[\]A-Za-z0-9_+\-*\/=<>.,|]+$/.test(body) ? body : whole
+  );
+  // Merge equations that were split into separately delimited terms, such as
+  // `$x^2$ + $y^2$ = 4`, into one valid KaTeX expression.
+  clean = clean.split("\n").map((line) => {
+    let normalized = line;
+    for (let pass = 0; pass < 3; pass += 1) {
+      normalized = normalized
+        .replace(/\$([^$\n]+)\$\s*([+\-*/])\s*\$([^$\n]+)\$/g, (_match, left, operator, right) => `$${left} ${operator} ${right}$`)
+        .replace(/\$([^$\n]+)\$\s*(=|<|>)\s*(?:\$([^$\n]+)\$|([+-]?\d+(?:\.\d+)?))(?=\s*(?:[.,;:!?)]\s*|$))/g, (_match, left, operator, rightMath, rightNumber) => `$${left} ${operator} ${rightMath || rightNumber}$`);
+    }
+    return normalized;
+  }).join("\n");
 
   const protectedChunks = [];
   clean = clean.replace(/(?:\\+)?\[\s*\$?(WIKI(?:\\?_|\s+)IMAGE|IMAGE(?:\\?_|\s+)SEARCH|DIAGRAM|FIGURE)\$?\s*:\s*([^\]\n]*?)(?:\\+)?\]/gi, (_whole, tag, query) => {
@@ -312,6 +401,8 @@ export function sanitizeLatexOutput(text) {
     .replace(/\\{1,}\[([\s\S]*?)\\{1,}\]/g, (_whole, formula) => `\n$$\n${formula.trim()}\n$$\n`)
     .replace(/\\{2,}(?=[A-Za-z])/g, "\\")
     .replace(/\\{2,}(?=[{}%_&#$;:!<>()\[\]])/g, "\\");
+  clean = repairRepeatedMathDelimiters(clean);
+  clean = repairProseInsideInlineMath(clean);
 
   // A few models put valid inline math markers around only the numerator or
   // denominator inside a TeX fraction. Those markers split the fraction into
@@ -351,6 +442,8 @@ export function sanitizeLatexOutput(text) {
   // (e.g. $$\Delta$G^{\\circ}$ = ...$$) while retaining the outer pair.
   clean = clean.replace(/\$\$([\s\S]*?)\$\$/g, (_whole, formula) => `$$${stripNestedMathDollars(formula)}$$`);
   clean = repairEscapedMathDelimiters(clean);
+  clean = repairRepeatedMathDelimiters(clean);
+  clean = repairProseInsideInlineMath(clean);
   clean = repairAssistantDollarMarkers(clean);
   clean = demoteInlineDisplayMath(clean);
   // Repair inline math where a model accidentally reopens a dollar delimiter
@@ -475,11 +568,13 @@ export function sanitizeLatexOutput(text) {
       const formula = labeledFormula[2].trim();
       const commandCount = (formula.match(/\\+(?:text|rightarrow|Rightarrow|frac|dfrac|sqrt|sin|cos|tan|int|sum|lim|mathrm|mathbf)\b/gi) || []).length;
       const formulaHasStructure = /[=<>_^{}]/.test(formula);
-      if (commandCount >= 2) {
+      const proseWords = formula.replace(/\\[A-Za-z]+\*?/g, " ").replace(/[{}_^=<>()[\],.*+\-/&|]/g, " ").match(/\b[A-Za-z]{3,}\b/g) || [];
+      const hasProseLanguage = /\b(?:and|as|approaches|because|differential|evaluate|expression|form|from|given|if|integrated|is|are|law|or|rate|since|so|solution|substitute|the|then|therefore|value|when|where|which|with)\b/i.test(formula);
+      if (commandCount >= 2 && proseWords.length <= 2 && !hasProseLanguage) {
         output.push(labeledFormula[1].trimEnd(), "$$", formula, "$$");
         continue;
       }
-      if (formulaHasStructure) {
+      if (formulaHasStructure && proseWords.length <= 2 && !hasProseLanguage) {
         output.push(`${labeledFormula[1]}$${formula.replace(/\\0\b/g, "0")}$`);
         continue;
       }
@@ -488,7 +583,8 @@ export function sanitizeLatexOutput(text) {
     const prefix = firstCommand > 0 ? formulaLine.slice(0, firstCommand).trim() : "";
     const equationLike = /[=<>_^{}]/.test(formulaLine);
     const proseWords = formulaLine.replace(/\\[A-Za-z]+\*?/g, " ").replace(/[{}_^=<>()[\],.*+\-/&|]/g, " ").match(/\b[A-Za-z]{3,}\b/g) || [];
-    if (!inFence && !insideMathBeforeLine && !dollars && hasRawCommand && (!prefix || (equationLike && proseWords.length <= 2))) {
+    const hasProseLanguage = /\b(?:and|as|approaches|because|differential|evaluate|expression|form|from|given|if|integrated|is|are|law|or|rate|since|so|solution|substitute|the|then|therefore|value|when|where|which|with)\b/i.test(formulaLine);
+    if (!inFence && !insideMathBeforeLine && !dollars && hasRawCommand && !hasProseLanguage && (!prefix || (equationLike && proseWords.length <= 2))) {
       output.push("$$", formulaLine, "$$");
       continue;
     }
@@ -542,9 +638,9 @@ export function sanitizeLatexOutput(text) {
     let formula = line.slice(first).trim();
     if (!formula || /^\\(?:begin|end)\s*\{(?:plot|scientific-plot)\}/i.test(formula)) return line;
     formula = formula.replace(/\\0\b/g, "0");
-    const label = prefix.match(/^(.*?(?::\s*|\*\*:\s*|\u00a0+))$/);
-    if (label) return `${prefix}$${formula}$`;
-    return `${prefix}$${formula}$`;
+    // Leave raw TeX for MathMarkdown's renderer pass. This layer owns cleanup
+    // and must not add math delimiters around the prose that follows it.
+    return `${prefix}${formula}`;
   }).join("\n");
 
   // Give GFM an unmistakable blank-line boundary around pipe tables. Some
@@ -629,7 +725,16 @@ export function sanitizeLatexOutput(text) {
   // opener while repairing malformed display wrappers.
   formatted = formatted.replace(/([A-Za-z])\$(?=[\\A-Za-z])/g, "$1 $");
   for (const chunk of codeChunks) formatted = formatted.replaceAll(chunk.token, chunk.value);
-  return formatted;
+  // Run delimiter repair last as well: the prose/table passes above can split
+  // one expression into adjacent spans or expose stray markers in old saved
+  // recall data. This keeps the final Markdown input balanced across views.
+  return repairProseInsideInlineMath(repairRepeatedMathDelimiters(formatted));
+}
+
+export function containsUnrenderedLatex(value) {
+  const protectedParts = String(value ?? "").split(/(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g);
+  const residue = /(?:\\(?:d?frac|tfrac|sqrt|sum|prod|int|lim|sin|cos|tan|log|ln|theta|alpha|beta|pi|infty|begin|end|left|right|mathbf|mathrm|operatorname)\b|(?<!\\)\$\$?|\b[A-Za-z][A-Za-z0-9]*\s*[_^]\s*\{[^{}\n]+\})/;
+  return protectedParts.some((part, index) => index % 2 === 0 && residue.test(part));
 }
 
 export function sanitizeLatexForDisplay(value) {
@@ -698,7 +803,8 @@ export function prepareAssistantMath(value) {
       const prefix = paragraph.slice(0, start);
       const formula = paragraph.slice(start).trim().replace(/^\\[,;:!]\s*/, "").replace(/^\\displaystyle\s*/, "");
       const words = formula.replace(/\\[A-Za-z]+\*?/g, " ").replace(/[{}_^=<>()[\],.*+\-/&|]/g, " ").match(/\b[A-Za-z]{3,}\b/g) || [];
-      if (!/[=<>]/.test(formula) || words.length > 3) return paragraph;
+      const hasProseLanguage = /\b(?:and|as|approaches|because|differential|evaluate|expression|form|from|given|if|integrated|is|are|law|or|rate|since|so|solution|substitute|the|then|therefore|value|when|where|which|with)\b/i.test(formula);
+      if (!/[=<>]/.test(formula) || words.length > 3 || hasProseLanguage) return paragraph;
       return `${prefix}$$\n${formula}\n$$`;
     }).join("");
   }).join("");
@@ -799,7 +905,7 @@ export function prepareAssistantMath(value) {
 }
 
 export function normalizeMathMarkup(value) {
-  let source = splitCollapsedMarkdownTables(String(value ?? "")).replace(/\\+n(?!(?:eq|e(?![A-Za-z])|abla|eg|i|ot|mid|u|exists|parallel|rightarrow|Rightarrow|subset|supset|vdash|triangleleft|triangleright))/g, "\n");
+  let source = repairRepeatedMathDelimiters(splitCollapsedMarkdownTables(String(value ?? ""))).replace(/\\+n(?!(?:eq|e(?![A-Za-z])|abla|eg|i|ot|mid|u|exists|parallel|rightarrow|Rightarrow|subset|supset|vdash|triangleleft|triangleright))/g, "\n");
   // Recall JSON and some model responses retain JSON-escaped delimiters
   // after parsing. Accept any slash run so Markdown gets proper math syntax.
   source = source.replace(/\\+\(([\s\S]*?)\\+\)/g, "$$$1$");

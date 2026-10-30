@@ -2,6 +2,7 @@ import { jsx } from "react/jsx-runtime";
 import { Fragment, jsx as jsx2 } from "react/jsx-runtime";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
 import {
   Activity,
   AlertTriangle,
@@ -53,7 +54,6 @@ import {
 import { SYLLABUS } from "./syllabus-data.js";
 import { NEET_BIOLOGY_CHAPTERS } from "./neet-syllabus-data.js";
 import { DEFAULT_MODEL_PREFERENCES } from "./ai.js";
-import StudyCopilot from "./study-copilot.js";
 import StudyToolkit from "./toolkit.js";
 import MemoryRecall from "./memory-recall.js";
 import PracticeDashboard from "./practice-dashboard.js";
@@ -62,9 +62,10 @@ import { ImageFullView, readImageDataUrl } from "./image-viewer.js";
 import { deleteLocalFile, fileToDataUrl, loadLocalFile, saveLocalFile } from "./local-files.js";
 import { JEE_SUBJECTS, NEET_SUBJECTS, SubjectModeContext, useSubjectMode } from "./subject-mode.js";
 import { NotesFolderIcon, ReadingListIcon, StudyTableIcon } from "./icon-illustrations.js";
+import StudyCopilot from "./study-copilot.js";
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => navigator.serviceWorker.register("./public/sw.js")).catch((error) => {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
       console.warn("Apex service worker registration failed:", error);
     });
   }, { once: true });
@@ -1109,12 +1110,12 @@ function WeeklyChart({ dailyMinutes, large = false }) {
   const values = days.map((date) => Number(dailyMinutes[dateKey(date)] || 0));
   const maximum = Math.max(60, ...values);
   return /* @__PURE__ */ jsx2("div", { className: "chart", style: large ? { height: 210 } : void 0, children: days.map((date, index) => /* @__PURE__ */ jsx2("div", { className: "chart-column", children: [
-    /* @__PURE__ */ jsx2("div", { className: `chart-bar ${index === 6 ? "today" : ""}`, style: { height: `${Math.max(values[index] ? 8 : 4, values[index] / maximum * (large ? 165 : 72))}px` }, title: `${values[index]} study minutes` }, void 0, false, {
+    /* @__PURE__ */ jsx2("div", { className: `chart-bar ${index === 6 ? "today" : ""}`, style: { height: `${Math.max(values[index] ? 8 : 4, values[index] / maximum * (large ? 165 : 72))}px` }, title: `${values[index]} study minutes` }, `bar-${dateKey(date)}`, false, {
       fileName: "<stdin>",
       lineNumber: 383,
       columnNumber: 82
     }, this),
-    /* @__PURE__ */ jsx2("span", { className: "chart-label", children: new Intl.DateTimeFormat("en", { weekday: "narrow" }).format(date) }, void 0, false, {
+    /* @__PURE__ */ jsx2("span", { className: "chart-label", children: new Intl.DateTimeFormat("en", { weekday: "narrow" }).format(date) }, `label-${dateKey(date)}`, false, {
       fileName: "<stdin>",
       lineNumber: 383,
       columnNumber: 289
@@ -1580,13 +1581,13 @@ function Sidebar({ activeView, onNavigate, onClose, syllabusMode = "mains" }) {
     if (event.target === event.currentTarget) onClose();
   }, children: /* @__PURE__ */ jsx2("aside", { className: "sidebar-drawer", "aria-label": "Study navigation", onTouchStart: beginSidebarTouch, onTouchMove: moveSidebarTouch, onTouchEnd: (event) => finishSidebarTouch(event), onTouchCancel: (event) => finishSidebarTouch(event, true), children: [
     /* @__PURE__ */ jsx2("div", { className: "sidebar-header", children: [
-      /* @__PURE__ */ jsx2("img", { className: "sidebar-app-icon", src: "/public/apex-mark.svg", alt: "Apex app icon" }, void 0, false, {
+      /* @__PURE__ */ jsx2("img", { className: "sidebar-app-icon", src: "/apex-mark.svg", alt: "Apex app icon" }, void 0, false, {
         fileName: "<stdin>",
         lineNumber: 465,
         columnNumber: 9
       }, this),
       /* @__PURE__ */ jsx2("div", { className: "sidebar-brand-copy", children: [
-        /* @__PURE__ */ jsx2("strong", { children: isNeetMode ? "Apex NEET" : "Apex JEE" }, void 0, false, {
+      /* @__PURE__ */ jsx2("strong", { children: isNeetMode ? "Apex NEET" : "Apex JEE" }, "sidebar-brand", false, {
           fileName: "<stdin>",
           lineNumber: 466,
           columnNumber: 45
@@ -3898,9 +3899,7 @@ function HandbookPdfReader({ document: pdfDocument, onClose }) {
         let source = pdfDocument.remoteUrl || pdfDocument.url;
         if (pdfDocument.localFileId) source = await loadLocalFile(pdfDocument.localFileId);
         if (!source) throw new Error("This PDF is no longer available on this device. Upload it again to read it here.");
-        const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
-        const pdfWorker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-        pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL("./pdf.worker.min.mjs", import.meta.url).href;
         const task = pdfDocument.remoteUrl
           ? pdfjs.getDocument({ url: source })
           : pdfjs.getDocument({ data: new Uint8Array(await (await fetch(source)).arrayBuffer()) });
@@ -5572,7 +5571,7 @@ function DashboardApp() {
           columnNumber: 38
         }, this),
         /* @__PURE__ */ jsx2("button", { className: "brand", onClick: goToday, "aria-label": "Apex home", children: [
-          /* @__PURE__ */ jsx2("span", { children: isNeetMode ? "Apex NEET" : "Apex JEE" }, void 0, false, {
+          /* @__PURE__ */ jsx2("span", { children: isNeetMode ? "Apex NEET" : "Apex JEE" }, "brand-label", false, {
             fileName: "<stdin>",
             lineNumber: 1154,
             columnNumber: 319
@@ -5588,7 +5587,7 @@ function DashboardApp() {
         columnNumber: 7
       }, this),
       /* @__PURE__ */ jsx2("button", { className: "profile-trigger", onClick: () => { previousViewRef.current = view === "settings" ? previousViewRef.current : view; setView("settings"); }, "aria-label": "Open profile and settings", children: [
-        /* @__PURE__ */ jsx2("span", { className: "profile-initial", children: profileInitial(profile.username) }, void 0, false, {
+        /* @__PURE__ */ jsx2("span", { className: "profile-initial", children: profileInitial(profile.username) }, "profile-initial", false, {
           fileName: "<stdin>",
           lineNumber: 1155,
           columnNumber: 114
@@ -5608,7 +5607,7 @@ function DashboardApp() {
       columnNumber: 5
     }, this),
     /* @__PURE__ */ jsx2("main", { className: "main", children: [
-      view === "assistant" && /* @__PURE__ */ jsx2(StudyCopilot, { userName: profile.username, messages: appState.copilotMessages, modelPrefs: settings.aiModelPrefs, onChange: (copilotMessages) => updateState((state) => ({ ...state, copilotMessages })), onHome: goToday }, void 0, false, { fileName: "<stdin>", lineNumber: 1159, columnNumber: 32 }, this),
+      view === "assistant" && React.createElement(AssistantRouteBoundary, { onHome: goToday }, React.createElement(StudyCopilot, { userName: profile.username, messages: appState.copilotMessages, modelPrefs: settings.aiModelPrefs, onChange: (copilotMessages) => updateState((state) => ({ ...state, copilotMessages })), onHome: goToday })),
       view === "today" && /* @__PURE__ */ jsx2(Fragment, { children: [
         /* @__PURE__ */ jsx2("section", { className: "greeting-row", children: [
           /* @__PURE__ */ jsx2("div", { children: [
@@ -5627,7 +5626,7 @@ function DashboardApp() {
             /* @__PURE__ */ jsx2("h1", { className: "greeting-title", children: [
               countdownGreeting,
               ", ",
-              /* @__PURE__ */ jsx2("span", { children: profile.username }, void 0, false, {
+              /* @__PURE__ */ jsx2("span", { children: profile.username }, "greeting-name", false, {
                 fileName: "<stdin>",
                 lineNumber: 1162,
                 columnNumber: 65
@@ -5650,7 +5649,7 @@ function DashboardApp() {
           }, this),
           /* @__PURE__ */ jsx2("div", { className: "jee-days-card", children: [
             /* @__PURE__ */ jsx2("strong", { children: dashboardExamDaysLeft }, void 0, false, { fileName: "<stdin>", lineNumber: 1166, columnNumber: 13 }, this),
-            /* @__PURE__ */ jsx2("span", { children: isNeetMode ? "days left to NEET" : "days left to JEE Main" }, void 0, false, { fileName: "<stdin>", lineNumber: 1166, columnNumber: 69 }, this)
+            /* @__PURE__ */ jsx2("span", { children: isNeetMode ? "days left to NEET" : "days left to JEE Main" }, "days-label", false, { fileName: "<stdin>", lineNumber: 1166, columnNumber: 69 }, this)
           ] }, void 0, true, { fileName: "<stdin>", lineNumber: 1165, columnNumber: 11 }, this)
         ] }, void 0, true, {
           fileName: "<stdin>",
@@ -5792,17 +5791,17 @@ function DashboardApp() {
                     /* @__PURE__ */ jsx2("strong", { children: [
                       "Day ",
                       dayNumber
-                    ] }, void 0, true, {
+                    ] }, "day-number", true, {
                       fileName: "<stdin>",
                       lineNumber: 1186,
                       columnNumber: 194
                     }, this),
-                    /* @__PURE__ */ jsx2("span", { children: dateLabel(date) }, void 0, false, {
+                    /* @__PURE__ */ jsx2("span", { children: dateLabel(date) }, "day-date", false, {
                       fileName: "<stdin>",
                       lineNumber: 1186,
                       columnNumber: 226
                     }, this),
-                    activeEditId === day.id && /* @__PURE__ */ jsx2("button", { type: "button", onClick: (event) => { event.stopPropagation(); handleDeleteDay(day.id); }, className: "absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-red-600 transition-transform active:scale-90 z-10", "aria-label": "Delete day", children: /* @__PURE__ */ jsx2("svg", { xmlns: "http://www.w3.org/2000/svg", width: "12", height: "12", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx2("path", { d: "M5 12h14" }, void 0, false, {}, this) }, void 0, false, {}, this) }, void 0, false, {}, this)
+                    activeEditId === day.id && /* @__PURE__ */ jsx2("button", { type: "button", onClick: (event) => { event.stopPropagation(); handleDeleteDay(day.id); }, className: "absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-red-600 transition-transform active:scale-90 z-10", "aria-label": "Delete day", children: /* @__PURE__ */ jsx2("svg", { xmlns: "http://www.w3.org/2000/svg", width: "12", height: "12", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx2("path", { d: "M5 12h14" }, void 0, false, {}, this) }, void 0, false, {}, this) }, "delete-day", false, {}, this)
                   ] }, day.id, true, {
                     fileName: "<stdin>",
                     lineNumber: 1186,
@@ -6220,7 +6219,7 @@ function DashboardApp() {
             const percent = totalTasks ? Math.round(completedTasks / totalTasks * 100) : 0;
             return /* @__PURE__ */ jsx2("div", { className: "subject-breakdown-row", children: [
               /* @__PURE__ */ jsx2("div", { className: "subject-breakdown-head", children: [
-                /* @__PURE__ */ jsx2("strong", { children: subject }, void 0, false, {
+                /* @__PURE__ */ jsx2("strong", { children: subject }, "subject-name", false, {
                   fileName: "<stdin>",
                   lineNumber: 1221,
                   columnNumber: 55
@@ -6230,7 +6229,7 @@ function DashboardApp() {
                   "/",
                   totalTasks,
                   " tasks ",
-                  /* @__PURE__ */ jsx2("b", { children: [
+                /* @__PURE__ */ jsx2("b", { children: [
                     percent,
                     "%"
                   ] }, void 0, true, {
@@ -6238,17 +6237,17 @@ function DashboardApp() {
                     lineNumber: 1221,
                     columnNumber: 112
                   }, this)
-                ] }, void 0, true, {
+                ] }, "subject-percent", true, {
                   fileName: "<stdin>",
                   lineNumber: 1221,
                   columnNumber: 81
                 }, this)
-              ] }, void 0, true, {
+                ] }, "subject-completion", true, {
                 fileName: "<stdin>",
                 lineNumber: 1221,
                 columnNumber: 15
               }, this),
-              /* @__PURE__ */ jsx2("div", { className: "subject-track", children: /* @__PURE__ */ jsx2("span", { className: `subject-fill subject-${subject.toLowerCase()}`, style: { width: `${percent}%` } }, void 0, false, {
+              /* @__PURE__ */ jsx2("div", { className: "subject-track", children: /* @__PURE__ */ jsx2("span", { className: `subject-fill subject-${subject.toLowerCase()}`, style: { width: `${percent}%` } }, "subject-progress", false, {
                 fileName: "<stdin>",
                 lineNumber: 1222,
                 columnNumber: 46
@@ -6439,12 +6438,12 @@ function DashboardApp() {
       columnNumber: 5
     }, this),
     !sidebarOpen && ["today", "tasks", "insights", "revision"].includes(view) && /* @__PURE__ */ jsx2("div", { className: "nav-dock-wrap", children: /* @__PURE__ */ jsx2("nav", { className: "nav-dock", "aria-label": "Main navigation", children: NAV_ITEMS.map(({ key, label, icon: Icon }) => /* @__PURE__ */ jsx2("button", { className: `nav-item ${view === key ? "active" : ""}`, "aria-current": view === key ? "page" : void 0, onClick: () => setView(key), children: [
-      /* @__PURE__ */ jsx2(Icon, { size: key === "revision" ? 24 : 18, strokeWidth: view === key ? 2.25 : 1.8 }, void 0, false, {
+      /* @__PURE__ */ jsx2(Icon, { size: key === "revision" ? 24 : 18, strokeWidth: view === key ? 2.25 : 1.8 }, "icon", false, {
         fileName: "<stdin>",
         lineNumber: 1249,
         columnNumber: 158
       }, this),
-      /* @__PURE__ */ jsx2("span", { children: label }, void 0, false, {
+      /* @__PURE__ */ jsx2("span", { children: label }, "label", false, {
         fileName: "<stdin>",
         lineNumber: 1249,
         columnNumber: 216
@@ -6541,8 +6540,50 @@ function DashboardApp() {
     columnNumber: 10
   }, this)));
 }
+class AssistantRouteBoundary extends React.Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("Apex assistant failed to load:", error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return React.createElement("section", { className: "assistant-route-state assistant-route-error", role: "alert" },
+        React.createElement("p", null, "The assistant could not open."),
+        React.createElement("button", { type: "button", className: "button primary", onClick: this.props.onHome }, "Back to Apex")
+      );
+    }
+    return this.props.children;
+  }
+}
+
+class AppErrorBoundary extends React.Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("Apex encountered a page error:", error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return React.createElement("main", { className: "assistant-route-state assistant-route-error", role: "alert" },
+        React.createElement("p", null, "Apex hit an unexpected page error."),
+        React.createElement("button", { type: "button", className: "button primary", onClick: () => this.setState({ failed: false }) }, "Try again"));
+    }
+    return this.props.children;
+  }
+}
 function App() {
-  return React.createElement(DashboardApp);
+  return React.createElement(AppErrorBoundary, null, React.createElement(DashboardApp));
 }
 createRoot(document.getElementById("root")).render(/* @__PURE__ */ jsx2(App, {}, void 0, false, {
   fileName: "<stdin>",
